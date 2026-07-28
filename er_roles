@@ -1,0 +1,78 @@
+[35mfull_migration.sql[m[36m:[mCREATE OR REPLACE FUNCTION public.[1;31mis_admin_viewer[m(_uid uuid)
+[35mfull_migration.sql[m[36m:[mGRANT EXECUTE ON FUNCTION public.[1;31mis_admin_viewer[m(uuid) TO authenticated;
+[35mfull_migration.sql[m[36m:[m-- ============ Helper: can_view_profile (depends on [1;31mis_admin_viewer[m and can_sign_as_supervisor) ============
+[35mfull_migration.sql[m[36m:[m  IF public.[1;31mis_admin_viewer[m(_viewer) THEN RETURN true; END IF;
+[35mfull_migration.sql[m[36m:[mCREATE POLICY "Admins manage org units" ON public.org_units FOR ALL TO authenticated USING (public.[1;31mis_admin_viewer[m(auth.uid())) WITH CHECK (public.[1;31mis_admin_viewer[m(auth.uid()));
+[35mfull_migration.sql[m[36m:[mCREATE POLICY "Admins read sync logs" ON public.sync_logs FOR SELECT TO authenticated USING (public.[1;31mis_admin_viewer[m(auth.uid()));
+[35mfull_migration.sql[m[36m:[mCREATE POLICY "Admins read sync schedule" ON public.sync_schedule FOR SELECT TO authenticated USING (public.[1;31mis_admin_viewer[m(auth.uid()));
+[35mfull_migration.sql[m[36m:[mCREATE POLICY "Admins update sync schedule" ON public.sync_schedule FOR UPDATE TO authenticated USING (public.[1;31mis_admin_viewer[m(auth.uid())) WITH CHECK (public.[1;31mis_admin_viewer[m(auth.uid()));
+[35mfull_migration.sql[m[36m:[m            AND (a.employee_id = auth.uid() OR a.chosen_supervisor_id = auth.uid() OR public.[1;31mis_admin_viewer[m(auth.uid())))
+[35mfull_migration.sql[m[36m:[m            AND (a.chosen_supervisor_id = auth.uid() OR public.[1;31mis_admin_viewer[m(auth.uid())))
+[35mfull_migration.sql[m[36m:[m  USING (user_id = auth.uid() OR public.[1;31mis_admin_viewer[m(auth.uid()));
+[35mfull_migration.sql[m[36m:[m  USING (employee_id = auth.uid() OR public.[1;31mis_admin_viewer[m(auth.uid()));
+[35mfull_migration.sql[m[36m:[m  WITH CHECK (public.[1;31mis_admin_viewer[m(auth.uid()));
+[35mfull_migration.sql[m[36m:[m    public.[1;31mis_admin_viewer[m(auth.uid()) OR EXISTS (
+[35mfull_migration.sql[m[36m:[mUSING (public.[1;31mis_admin_viewer[m(auth.uid()));
+[35mfull_migration.sql[m[36m:[m  OR public.[1;31mis_admin_viewer[m(auth.uid())
+[35mfull_migration.sql[m[36m:[m    OR public.[1;31mis_admin_viewer[m(auth.uid())
+[35mfull_migration.sql[m[36m:[mUSING (assigned_by = auth.uid() OR public.[1;31mis_admin_viewer[m(auth.uid()))
+[35mfull_migration.sql[m[36m:[mWITH CHECK (assigned_by = auth.uid() OR public.[1;31mis_admin_viewer[m(auth.uid()));
+[35mfull_migration.sql[m[36m:[mUSING (assigned_by = auth.uid() OR public.[1;31mis_admin_viewer[m(auth.uid()));
+[35mfull_migration.sql[m[36m:[m  OR public.[1;31mis_admin_viewer[m(auth.uid())
+[35mfull_migration.sql[m[36m:[m  OR public.[1;31mis_admin_viewer[m(auth.uid())
+[35mfull_migration.sql[m[36m:[m  OR public.[1;31mis_admin_viewer[m(auth.uid())
+[35mfull_migration.sql[m[36m:[mUSING (employee_id = auth.uid() OR public.[1;31mis_admin_viewer[m(auth.uid()));
+[35mfull_migration.sql[m[36m:[mUSING (bucket_id = 'continuous-review-evidence' AND (auth.uid()::text = (storage.foldername(name))[1] OR public.[1;31mis_admin_viewer[m(auth.uid())));
+[35mfull_migration.sql[m[36m:[mUSING (EXISTS(SELECT 1 FROM public.workplans w WHERE w.id = workplan_id AND (w.assignee_id=auth.uid() OR w.assigned_by=auth.uid() OR public.[1;31mis_admin_viewer[m(auth.uid()))));
+[35mfull_migration.sql[m[36m:[mUSING (employee_id=auth.uid() OR supervisor_id=auth.uid() OR public.[1;31mis_admin_viewer[m(auth.uid())
+[35mfull_migration.sql[m[36m:[mUSING (supervisor_id=auth.uid() OR public.[1;31mis_admin_viewer[m(auth.uid()))
+[35mfull_migration.sql[m[36m:[mWITH CHECK (supervisor_id=auth.uid() OR public.[1;31mis_admin_viewer[m(auth.uid()));
+[35mfull_migration.sql[m[36m:[mUSING (public.[1;31mis_admin_viewer[m(auth.uid())
+[35mfull_migration.sql[m[36m:[m              AND (r.generated_by=auth.uid() OR r.related_employee_id=auth.uid() OR public.[1;31mis_admin_viewer[m(auth.uid())
+[35mfull_migration.sql[m[36m:[m    OR public.[1;31mis_admin_viewer[m(auth.uid())
+[35msrc/integrations/supabase/types.ts[m[36m:[m      [1;31mis_admin_viewer[m: { Args: { _uid: string }; Returns: boolean }
+[35msrc/lib/ai-report.functions.ts[m[36m:[m      || (await context.supabase.rpc("[1;31mis_admin_viewer[m", { _uid: context.userId })).data === true;
+[35msrc/lib/notify.functions.ts[m[36m:[m    const { data: ok } = (await context.supabase.rpc("[1;31mis_admin_viewer[m", { _uid: context.userId })) as { data: boolean | null };
+[35msrc/lib/pdf.functions.ts[m[36m:[m      const { data: isAdmin } = await supabase.rpc("[1;31mis_admin_viewer[m", { _uid: userId });
+[35msrc/lib/sync.functions.ts[m[36m:[masync function assertAdmin(supabase: { rpc: (n: "[1;31mis_admin_viewer[m", a: { _uid: string }) => unknown }, userId: string) {
+[35msrc/lib/sync.functions.ts[m[36m:[m  const { data } = (await (supabase.rpc("[1;31mis_admin_viewer[m", { _uid: userId }) as Promise<{ data: boolean | null }>));
+[35msupabase/migrations/20260607185436_ce01f44f-158b-4a32-b561-255e9e062ee1.sql[m[36m:[mCREATE OR REPLACE FUNCTION public.[1;31mis_admin_viewer[m(_uid uuid)
+[35msupabase/migrations/20260607185436_ce01f44f-158b-4a32-b561-255e9e062ee1.sql[m[36m:[mGRANT EXECUTE ON FUNCTION public.[1;31mis_admin_viewer[m(uuid) TO authenticated;
+[35msupabase/migrations/20260607185436_ce01f44f-158b-4a32-b561-255e9e062ee1.sql[m[36m:[m  USING (chosen_supervisor_id = auth.uid() OR public.[1;31mis_admin_viewer[m(auth.uid()));
+[35msupabase/migrations/20260607185436_ce01f44f-158b-4a32-b561-255e9e062ee1.sql[m[36m:[m    public.[1;31mis_admin_viewer[m(auth.uid())
+[35msupabase/migrations/20260607185436_ce01f44f-158b-4a32-b561-255e9e062ee1.sql[m[36m:[m      AND (a.chosen_supervisor_id = auth.uid() OR public.[1;31mis_admin_viewer[m(auth.uid()))
+[35msupabase/migrations/20260607185436_ce01f44f-158b-4a32-b561-255e9e062ee1.sql[m[36m:[m  USING (public.[1;31mis_admin_viewer[m(auth.uid()));
+[35msupabase/migrations/20260608044509_a3ece82d-a0d0-44d0-b92d-9f795aeb7ab1.sql[m[36m:[m  USING (has_role(auth.uid(), 'appeals_committee') OR [1;31mis_admin_viewer[m(auth.uid()));
+[35msupabase/migrations/20260608044530_3bf61817-d59a-433e-b575-18b3cc74d8a6.sql[m[36m:[m          OR public.[1;31mis_admin_viewer[m(auth.uid())
+[35msupabase/migrations/20260609075300_43e1fbc4-e877-486f-896e-aacdc464d927.sql[m[36m:[m      OR public.[1;31mis_admin_viewer[m(auth.uid())
+[35msupabase/migrations/20260610040856_b69edf56-c869-481c-a684-c8a6acefc78e.sql[m[36m:[m  USING (public.[1;31mis_admin_viewer[m(auth.uid()));
+[35msupabase/migrations/20260612083211_4de28475-b758-4786-b803-836eeb099278.sql[m[36m:[m                   OR public.[1;31mis_admin_viewer[m(auth.uid())))
+[35msupabase/migrations/20260612083211_4de28475-b758-4786-b803-836eeb099278.sql[m[36m:[m  USING (public.[1;31mis_admin_viewer[m(auth.uid()));
+[35msupabase/migrations/20260615054523_ebfeb169-1046-4a19-9117-152f9890f7e1.sql[m[36m:[mCREATE POLICY "Admins manage org units" ON public.org_units FOR ALL TO authenticated USING (public.[1;31mis_admin_viewer[m(auth.uid())) WITH CHECK (public.[1;31mis_admin_viewer[m(auth.uid()));
+[35msupabase/migrations/20260615054523_ebfeb169-1046-4a19-9117-152f9890f7e1.sql[m[36m:[mCREATE POLICY "Admins read sync logs" ON public.sync_logs FOR SELECT TO authenticated USING (public.[1;31mis_admin_viewer[m(auth.uid()));
+[35msupabase/migrations/20260615054523_ebfeb169-1046-4a19-9117-152f9890f7e1.sql[m[36m:[mCREATE POLICY "Admins read sync schedule" ON public.sync_schedule FOR SELECT TO authenticated USING (public.[1;31mis_admin_viewer[m(auth.uid()));
+[35msupabase/migrations/20260615054523_ebfeb169-1046-4a19-9117-152f9890f7e1.sql[m[36m:[mCREATE POLICY "Admins update sync schedule" ON public.sync_schedule FOR UPDATE TO authenticated USING (public.[1;31mis_admin_viewer[m(auth.uid())) WITH CHECK (public.[1;31mis_admin_viewer[m(auth.uid()));
+[35msupabase/migrations/20260615054523_ebfeb169-1046-4a19-9117-152f9890f7e1.sql[m[36m:[m            AND (a.employee_id = auth.uid() OR a.chosen_supervisor_id = auth.uid() OR public.[1;31mis_admin_viewer[m(auth.uid())))
+[35msupabase/migrations/20260615054523_ebfeb169-1046-4a19-9117-152f9890f7e1.sql[m[36m:[m            AND (a.chosen_supervisor_id = auth.uid() OR public.[1;31mis_admin_viewer[m(auth.uid())))
+[35msupabase/migrations/20260616161045_efe4a0d8-b9fa-47f2-9013-dda3ba607cfd.sql[m[36m:[m  USING (user_id = auth.uid() OR public.[1;31mis_admin_viewer[m(auth.uid()));
+[35msupabase/migrations/20260616161045_efe4a0d8-b9fa-47f2-9013-dda3ba607cfd.sql[m[36m:[m  USING (employee_id = auth.uid() OR public.[1;31mis_admin_viewer[m(auth.uid()));
+[35msupabase/migrations/20260616161045_efe4a0d8-b9fa-47f2-9013-dda3ba607cfd.sql[m[36m:[m  WITH CHECK (public.[1;31mis_admin_viewer[m(auth.uid()));
+[35msupabase/migrations/20260616161045_efe4a0d8-b9fa-47f2-9013-dda3ba607cfd.sql[m[36m:[m    public.[1;31mis_admin_viewer[m(auth.uid()) OR EXISTS (
+[35msupabase/migrations/20260617061956_e297d588-32f6-4ebe-a1b9-d7879941a56f.sql[m[36m:[mUSING (public.[1;31mis_admin_viewer[m(auth.uid()));
+[35msupabase/migrations/20260626090509_9ff06221-d9b2-4ccc-9b0e-8b0e11e8f5e3.sql[m[36m:[m  OR public.[1;31mis_admin_viewer[m(auth.uid())
+[35msupabase/migrations/20260626090509_9ff06221-d9b2-4ccc-9b0e-8b0e11e8f5e3.sql[m[36m:[m    OR public.[1;31mis_admin_viewer[m(auth.uid())
+[35msupabase/migrations/20260626090509_9ff06221-d9b2-4ccc-9b0e-8b0e11e8f5e3.sql[m[36m:[mUSING (assigned_by = auth.uid() OR public.[1;31mis_admin_viewer[m(auth.uid()))
+[35msupabase/migrations/20260626090509_9ff06221-d9b2-4ccc-9b0e-8b0e11e8f5e3.sql[m[36m:[mWITH CHECK (assigned_by = auth.uid() OR public.[1;31mis_admin_viewer[m(auth.uid()));
+[35msupabase/migrations/20260626090509_9ff06221-d9b2-4ccc-9b0e-8b0e11e8f5e3.sql[m[36m:[mUSING (assigned_by = auth.uid() OR public.[1;31mis_admin_viewer[m(auth.uid()));
+[35msupabase/migrations/20260626090509_9ff06221-d9b2-4ccc-9b0e-8b0e11e8f5e3.sql[m[36m:[m  OR public.[1;31mis_admin_viewer[m(auth.uid())
+[35msupabase/migrations/20260626090509_9ff06221-d9b2-4ccc-9b0e-8b0e11e8f5e3.sql[m[36m:[m  OR public.[1;31mis_admin_viewer[m(auth.uid())
+[35msupabase/migrations/20260626090509_9ff06221-d9b2-4ccc-9b0e-8b0e11e8f5e3.sql[m[36m:[m  OR public.[1;31mis_admin_viewer[m(auth.uid())
+[35msupabase/migrations/20260626090509_9ff06221-d9b2-4ccc-9b0e-8b0e11e8f5e3.sql[m[36m:[mUSING (employee_id = auth.uid() OR public.[1;31mis_admin_viewer[m(auth.uid()));
+[35msupabase/migrations/20260626090509_9ff06221-d9b2-4ccc-9b0e-8b0e11e8f5e3.sql[m[36m:[mUSING (bucket_id = 'continuous-review-evidence' AND (auth.uid()::text = (storage.foldername(name))[1] OR public.[1;31mis_admin_viewer[m(auth.uid())));
+[35msupabase/migrations/20260701063124_0d67dda9-a25b-4403-bcd8-fae0fc1ece28.sql[m[36m:[mUSING (EXISTS(SELECT 1 FROM public.workplans w WHERE w.id = workplan_id AND (w.assignee_id=auth.uid() OR w.assigned_by=auth.uid() OR public.[1;31mis_admin_viewer[m(auth.uid()))));
+[35msupabase/migrations/20260701063124_0d67dda9-a25b-4403-bcd8-fae0fc1ece28.sql[m[36m:[mUSING (employee_id=auth.uid() OR supervisor_id=auth.uid() OR public.[1;31mis_admin_viewer[m(auth.uid())
+[35msupabase/migrations/20260701063124_0d67dda9-a25b-4403-bcd8-fae0fc1ece28.sql[m[36m:[mUSING (supervisor_id=auth.uid() OR public.[1;31mis_admin_viewer[m(auth.uid()))
+[35msupabase/migrations/20260701063124_0d67dda9-a25b-4403-bcd8-fae0fc1ece28.sql[m[36m:[mWITH CHECK (supervisor_id=auth.uid() OR public.[1;31mis_admin_viewer[m(auth.uid()));
+[35msupabase/migrations/20260701063124_0d67dda9-a25b-4403-bcd8-fae0fc1ece28.sql[m[36m:[mUSING (public.[1;31mis_admin_viewer[m(auth.uid())
+[35msupabase/migrations/20260701063124_0d67dda9-a25b-4403-bcd8-fae0fc1ece28.sql[m[36m:[m              AND (r.generated_by=auth.uid() OR r.related_employee_id=auth.uid() OR public.[1;31mis_admin_viewer[m(auth.uid())
+[35msupabase/migrations/20260708071908_d67fef18-e565-45cf-abdc-42894124e957.sql[m[36m:[m    OR public.[1;31mis_admin_viewer[m(auth.uid())

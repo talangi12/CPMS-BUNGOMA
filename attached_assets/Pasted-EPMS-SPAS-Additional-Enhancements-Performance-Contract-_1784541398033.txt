@@ -1,0 +1,239 @@
+EPMS/SPAS Additional Enhancements – Performance Contract Workflow, Performance Matrix & Workplan Corrections
+
+Please implement the following enhancements and corrections to further align the system with the official County Government SPAS and Performance Contracting Guidelines.
+
+---
+
+1. Create a Dedicated Performance Contract Sign-Off Module
+
+The Performance Contract Sign-Off should NOT be inside the Performance Contract page.
+
+Create a separate menu/page called:
+
+Performance Contract Sign-Off
+
+This module should be dedicated solely to reviewing and approving Performance Contracts.
+
+Governor Workflow
+
+When the Governor logs in and opens Performance Contract Sign-Off, the Governor should only see the list of CEC Members.
+
+Each CEC should be displayed as a card showing:
+
+- Profile Picture (or default avatar)
+- Full Name
+- Department
+- Performance Contract Status
+
+When the Governor clicks on a CEC, that CEC's complete Performance Contract should automatically load for review.
+
+The Governor should then be able to:
+
+- Review the Performance Contract.
+- Approve it.
+- Return it for correction with mandatory comments.
+- Digitally sign or upload a signature.
+- Save the approval.
+
+The Governor should never see all Performance Contracts simultaneously; only the selected CEC's contract should open.
+
+---
+
+CEC Workflow
+
+When a CEC logs in:
+
+- Only the Chief Officers under that CEC's department should appear.
+
+Selecting a Chief Officer should automatically open the Chief Officer's Performance Contract for review and approval.
+
+---
+
+Chief Officer Workflow
+
+Only Directors within the Chief Officer's Directorate should appear.
+
+Selecting a Director should automatically load that Director's Performance Contract.
+
+---
+
+Director Workflow
+
+Only Supervisors within the Director's department should appear.
+
+Selecting a Supervisor should automatically load that Supervisor's Performance Contract.
+
+---
+
+2. Departmental Administrator Role
+
+Create a new role called:
+
+Departmental Administrator
+
+Include this role in Manage Roles.
+
+The System Administrator and Super Administrator should be able to:
+
+- Grant the Departmental Administrator role.
+- Revoke the Departmental Administrator role.
+- Assign the Departmental Administrator to a specific department.
+
+The Departmental Administrator should only manage information within the assigned department.
+
+---
+
+3. Performance Matrix Improvements
+
+New Column Structure
+
+Update the Performance Matrix table to use the following columns:
+
+| Cross Category | Current Status | Unit | Weight | Type | Source |
+
+Rename the current Target column to Cross Category.
+
+Insert a new column immediately after it called Current Status.
+
+The Current Status column should capture the current progress or status of each performance item where applicable.
+
+---
+
+Category Management
+
+Allow only the Departmental Administrator to:
+
+- Add new performance categories.
+- Edit existing performance categories.
+- Delete categories (only if not in use).
+- Activate or deactivate categories.
+- Reorder categories.
+
+Examples of categories include:
+
+- Financial Stewardship and Discipline
+- Service Delivery
+- Institutional Transformation
+- Core Mandate
+- Cross-Cutting Issues
+
+The category list should remain configurable rather than hardcoded.
+
+---
+
+Weight Validation
+
+When the Departmental Administrator configures a category, they should define its Recommended Total Weight.
+
+For example:
+
+Core Mandate = 60
+
+Service Delivery = 10
+
+Cross-Cutting Issues = 12
+
+The system should automatically validate the total weight of all items within that category.
+
+Rules:
+
+- The total allocated weight must equal the recommended weight.
+- The total allocated weight must not exceed the recommended weight.
+- The total allocated weight must not be below the recommended weight.
+
+The system should display a live indicator showing:
+
+- Recommended Weight
+- Allocated Weight
+- Remaining Weight
+
+A Performance Contract cannot be submitted until all categories satisfy their required total weights.
+
+---
+
+4. Correct the Workplan Workflow
+
+Revise the Workplan process.
+
+The current implementation is incorrect.
+
+The correct workflow is:
+
+- The Appraisee prepares their own Workplan.
+- The Appraisee creates activities and targets based on departmental objectives and assigned responsibilities.
+- The completed Workplan is submitted to the Supervisor or Director.
+- The Supervisor/Director reviews the Workplan.
+- The Supervisor/Director may approve it or return it with comments for correction.
+- Once approved, the Workplan becomes read-only and forms the basis of the employee's appraisal.
+
+The system should maintain version history for every Workplan submission and approval.
+
+---
+
+5. Numeric Performance Indicators & Automatic Rating
+
+When an Appraisee creates a target, the Performance Indicator should be entered as a numeric value.
+
+During appraisal, the Supervisor should enter the Achieved Result as a numeric value.
+
+The system should then automatically calculate and display:
+
+- Achievement Percentage
+- Performance Rating (%)
+- Weighted Score
+- Overall Appraisal Score
+
+Calculations should update instantly as values are entered, without requiring page refresh.
+
+---
+
+6. Enhanced Performance Contract Signing
+
+Enhance the Performance Contract signing process by providing two signature options.
+
+Users should be able to:
+
+- Digitally sign using the built-in signature pad.
+- Upload a scanned handwritten signature image (PNG, JPG, JPEG).
+
+After the Performance Contract has been fully signed:
+
+- Allow users to preview the finalized document.
+- Download it as a PDF.
+- Print it directly from the system.
+
+The generated document should include all signatures, approval dates, and approval history.
+
+---
+
+7. Performance Contract Report
+
+Under Reports / SPAS Forms, create a new report titled:
+
+Performance Contract Report
+
+The report should follow the same layout and template as the Performance Contract.
+
+However, include an additional column titled:
+
+Achievement
+
+The report should therefore contain:
+
+- Cross Category
+- Current Status
+- Unit
+- Weight
+- Type
+- Source
+- Achievement
+
+The Achievement column should display the actual performance attained during the appraisal period.
+
+The report should be exportable to PDF, Excel, and printable while preserving the official County Government formatting.
+
+---
+
+Expected Outcome
+
+The system should provide a dedicated Performance Contract Sign-Off module separate from the Performance Contract editor, introduce the Departmental Administrator role with departmental configuration privileges, improve the Performance Matrix with configurable categories and strict weight validation, correct the Workplan workflow so Appraisees prepare and submit their own workplans for approval, automate numeric performance scoring, support both uploaded and digital signatures with printable Performance Contracts, and generate official Performance Contract reports including an Achievement column.

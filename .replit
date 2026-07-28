@@ -1,0 +1,45 @@
+modules = ["nodejs-20", "web", "python-base-3.13"]
+
+[nix]
+channel = "stable-25_05"
+
+[agent]
+expertMode = true
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bun run dev"
+waitForPort = 5000
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[userenv]
+
+[userenv.shared]
+SUPABASE_PROJECT_ID = "wjhvboxkgxntfucocecn"
+SUPABASE_PUBLISHABLE_KEY = "sb_publishable_VpgvqWDh3tsyMWOlCSGV2Q_QEXna-vu"
+SUPABASE_URL = "https://wjhvboxkgxntfucocecn.supabase.co"
+VITE_SUPABASE_PROJECT_ID = "wjhvboxkgxntfucocecn"
+VITE_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_VpgvqWDh3tsyMWOlCSGV2Q_QEXna-vu"
+VITE_SUPABASE_URL = "https://wjhvboxkgxntfucocecn.supabase.co"

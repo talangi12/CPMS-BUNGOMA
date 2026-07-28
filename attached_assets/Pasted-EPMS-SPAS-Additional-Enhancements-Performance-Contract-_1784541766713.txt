@@ -1,0 +1,228 @@
+EPMS/SPAS Additional Enhancements – Performance Contract, Workplans & Reports
+
+Please implement the following enhancements and corrections to improve the Performance Contract, Workplan, Reports, and Performance Matrix modules.
+
+---
+
+1. Performance Contract Matrix Improvements
+
+Update the Performance Contract matrix structure.
+
+Column Structure
+
+Modify the current columns to appear in the following order:
+
+| Cross Category | Current Status | Unit | Weight | Type | Source |
+
+Cross Category
+
+Rename the current Target column to Cross Category.
+
+This column represents the specific performance target or objective under the selected performance category.
+
+Current Status
+
+Insert a new column immediately after Cross Category called Current Status.
+
+This field should capture the current implementation status of the target.
+
+Examples may include:
+
+- Not Started
+- In Progress
+- Completed
+- Ongoing
+- Delayed
+- Deferred
+
+The available statuses should be configurable by the Departmental Administrator.
+
+---
+
+2. Departmental Administrator Category Management
+
+Extend the Departmental Administrator Portal.
+
+The Departmental Administrator should be able to:
+
+- Add a new Performance Category.
+- Edit an existing Performance Category.
+- Delete a Performance Category (only if it is not already being used).
+- Activate or deactivate categories.
+- Rearrange the order in which categories appear.
+
+Examples include:
+
+- Financial Stewardship and Discipline
+- Service Delivery
+- Institutional Transformation
+- Core Mandate
+- Cross-Cutting Issues
+
+These categories should automatically become available throughout the Performance Contract module.
+
+---
+
+3. Weight Validation
+
+When a Departmental Administrator creates or edits a Performance Category, they should define the Recommended Weight for that category.
+
+Example:
+
+Financial Stewardship = 25
+
+The system should automatically enforce the following validation rules:
+
+- The combined weight of all Cross Category entries within that Performance Category must equal exactly the Recommended Weight.
+- Users must not be allowed to exceed the Recommended Weight.
+- Users must not submit the Performance Contract if the combined weight is below the Recommended Weight.
+- Display a live indicator showing:
+
+Recommended Weight: 25
+
+Current Allocated Weight: 18
+
+Remaining Weight: 7
+
+The indicator should update automatically as weights are entered.
+
+---
+
+4. Workplan Workflow Correction
+
+Correct the Workplan workflow.
+
+The current implementation incorrectly allows Supervisors or Directors to create employee workplans.
+
+Instead, implement the official workflow:
+
+Appraisee
+
+The Appraisee should:
+
+- Create their own Workplan.
+- Define their own activities and targets based on departmental objectives.
+- Submit the Workplan to the Supervisor or Director.
+
+Supervisor / Director
+
+The Supervisor or Director should:
+
+- Review the submitted Workplan.
+- Approve it.
+- Return it for correction with mandatory comments.
+
+Once approved, the Workplan becomes read-only and serves as the basis for appraisal throughout the cycle.
+
+---
+
+5. Numerical Performance Indicators & Automatic Rating
+
+When an Appraisee creates a performance target within the Workplan or Appraisal:
+
+The Performance Indicator should accept numeric values only.
+
+Example:
+
+Target = 100
+
+During appraisal, the Supervisor should enter the Achieved Result as a numeric value only.
+
+Example:
+
+Achieved Result = 92
+
+Immediately after entering the achieved value, the system should automatically calculate and display:
+
+- Achievement Percentage
+- Performance Rating (%)
+
+Example:
+
+Target = 100
+
+Achieved = 92
+
+Performance Rating = 92%
+
+These calculations should occur in real time without refreshing the page.
+
+---
+
+6. Signature Upload Option for Performance Contracts
+
+Enhance the Performance Contract signing process.
+
+Users should have two methods of signing:
+
+Option 1
+
+Digitally sign using the in-system signature pad.
+
+Option 2
+
+Upload an existing signature image.
+
+Supported formats:
+
+- PNG
+- JPG
+- JPEG
+
+Maximum file size:
+
+10 MB
+
+Once signed:
+
+- Display the signature on the Performance Contract.
+- Record the signing date and time.
+- Record the signatory's name and position.
+- Lock the signed section against editing.
+
+After signing, users should be able to:
+
+- Download the signed Performance Contract as a PDF.
+- Print the signed Performance Contract directly from the system.
+
+---
+
+7. Performance Contract Report
+
+Under Reports / SPAS Forms, create a Performance Contract Report.
+
+The report should use exactly the same structure and formatting as the Performance Contract template.
+
+However, include one additional column:
+
+| Cross Category | Current Status | Achievement | Unit | Weight | Type | Source |
+
+The Achievement column should automatically display the actual results achieved during implementation.
+
+The report should be exportable to:
+
+- PDF
+- Excel
+
+while maintaining the official Performance Contract layout.
+
+---
+
+8. Cross Category Information Tooltip
+
+When a Departmental Administrator creates or edits a Cross Category, display an Information ("i") icon before the Cross Category selection field.
+
+When the icon is clicked or hovered over, a help panel or tooltip should appear explaining:
+
+- The purpose of the selected Cross Category.
+- What information should be captured.
+- Examples of suitable targets.
+- Guidance on assigning units, weights, types, and sources.
+
+This guidance should help administrators configure the Performance Matrix correctly and consistently without requiring external documentation.
+
+---
+
+Expected Outcome
+
+The Performance Contract module should provide a more structured and policy-compliant experience with configurable performance categories, strict weight validation, an enhanced matrix including Cross Category and Current Status, improved workplan ownership by Appraisees, automatic percentage calculations from numeric targets and achievements, flexible digital signature options with printing and downloading capabilities, a dedicated Performance Contract report including an Achievement column, and built-in guidance through contextual information tooltips for administrators.

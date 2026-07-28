@@ -1,0 +1,1 @@
+- [Enhancement implementation notes](enhancements-v1.md) — all 8 SPAS enhancements from July 2026; migration + 4 route rewrites; new DB tables; known deployment blocker.
