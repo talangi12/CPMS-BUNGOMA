@@ -7,6 +7,8 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { RatingBadge, classify } from "@/components/RatingBadge";
+import { computeTargetScore } from "@/lib/appraisal-scoring";
+import { getDashboardMetrics } from "@/lib/appraisal.functions";
 import { ArrowRight, CalendarClock, ClipboardCheck, FileText, Target, TrendingUp, GraduationCap, Inbox, ShieldCheck, UserCog, Gavel, UserPlus } from "lucide-react";
 import { useRoles, hasAnyRole, ROLE_LABELS, ROLE_RESPONSIBILITIES } from "@/hooks/useRoles";
 import { DashboardStatsPopup } from "@/components/DashboardStatsPopup";
@@ -44,22 +46,20 @@ function Dashboard() {
   const { data, isLoading } = useQuery({
     queryKey: ["dashboard", user.id],
     queryFn: async () => {
-      const [{ data: profile }, { data: appraisals }, supInbox] = await Promise.all([
-        supabase.from("profiles").select("*").eq("id", user.id).maybeSingle(),
-        supabase.from("appraisals").select("*, targets(weight, score)").eq("employee_id", user.id).order("created_at", { ascending: false }),
-        supabase.from("appraisals").select("id, status").eq("chosen_supervisor_id", user.id).eq("status", "submitted"),
-      ]);
-      return { profile, appraisals: appraisals ?? [], pendingReviews: supInbox.data?.length ?? 0 };
+      return getDashboardMetrics();
     },
   });
 
-  const current = data?.appraisals[0];
-  const totalWeight = current?.targets?.reduce((a: number, t: { weight: number | null }) => a + (Number(t.weight) || 0), 0) ?? 0;
-  const weightedScore = current?.targets?.reduce(
-    (a: number, t: { weight: number | null; score: number | null }) => a + (Number(t.weight) || 0) * (Number(t.score) || 0),
+  const current = data?.currentAppraisal;
+  const totalWeight = (current?.targets as any[] | undefined)?.reduce((a: number, t: any) => a + (Number(t.weight) || 0), 0) ?? 0;
+  const weightedScore = (current?.targets as any[] | undefined)?.reduce(
+    (a: number, t: any) => {
+      const score = t.score ?? computeTargetScore(t.performance_indicator, t.achieved_result).score ?? 0;
+      return a + (Number(t.weight) || 0) * score;
+    },
     0,
   ) ?? 0;
-  const livePct = totalWeight > 0 ? weightedScore / totalWeight : null;
+  const livePct = totalWeight > 0 ? weightedScore / totalWeight : current?.total_score ?? null;
   const liveRating = classify(livePct);
 
   const isSupervisor = hasAnyRole(roles, ["supervisor"]);
@@ -103,7 +103,7 @@ function Dashboard() {
             <div className="flex flex-wrap gap-2">
               {isSupervisor && (
                 <Link to="/supervisor/inbox" className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10">
-                  <Inbox className="h-3.5 w-3.5" /> Review Inbox{data?.pendingReviews ? ` (${data.pendingReviews})` : ""}
+                  <Inbox className="h-3.5 w-3.5" /> Review Inbox{data?.pendingSupervisorReviews ? ` (${data.pendingSupervisorReviews})` : ""}
                 </Link>
               )}
               <Link to="/midyear" className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted">
@@ -141,29 +141,47 @@ function Dashboard() {
         <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard icon={ClipboardCheck} label="Current status" value={current?.status?.toUpperCase() ?? "NOT STARTED"} tone="primary" />
           <StatCard icon={Target} label="Targets set" value={String(current?.targets?.length ?? 0)} />
-          <StatCard icon={TrendingUp} label="Live score" value={livePct != null ? `${livePct.toFixed(1)}%` : "—"} />
-          <StatCard icon={CalendarClock} label="Cycle" value={current?.period ?? new Date().getFullYear().toString()} />
+          <StatCard icon={TrendingUp} label="Continuous reviews" value={String(data?.continuousReviewCount ?? 0)} />
+          <StatCard icon={Inbox} label="Supervisor queue" value={String(data?.pendingSupervisorReviews ?? 0)} />
         </div>
 
         {/* Main grid */}
         <div className="mt-8 grid gap-6 lg:grid-cols-3">
-          {/* Performance card */}
+          {/* Performance rating card */}
           <Card className="p-6 lg:col-span-2">
             <div className="flex items-start justify-between">
               <div>
-                <h2 className="font-display text-lg font-bold">Current performance</h2>
-                <p className="text-sm text-muted-foreground">Section 8 — Performance Rating Matrix (auto-calculated)</p>
+                <h2 className="font-display text-lg font-bold">Performance Rating</h2>
+                <p className="text-sm text-muted-foreground">Final appraisal score and status summary</p>
               </div>
-              <RatingBadge rating={liveRating ?? undefined} score={livePct ?? undefined} />
+              <RatingBadge rating={current?.status === "approved" ? current?.rating ?? liveRating ?? undefined : liveRating ?? undefined} score={current?.status === "approved" ? current?.total_score ?? livePct ?? undefined : livePct ?? undefined} />
             </div>
 
             <div className="mt-6">
-              <Progress value={Math.min(livePct ?? 0, 100)} className="h-3" />
+              <Progress value={Math.min(current?.status === "approved" ? Number(current?.total_score ?? livePct ?? 0) : Math.min(livePct ?? 0, 100), 100)} className="h-3" />
               <div className="mt-2 flex justify-between text-xs text-muted-foreground">
                 <span>0%</span><span>50% Fair</span><span>65% Good</span><span>85% Very Good</span><span>101%+ Excellent</span>
               </div>
             </div>
 
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border border-border bg-muted/20 p-4">
+                <div className="text-xs text-muted-foreground">Status</div>
+                <div className="mt-1 font-semibold">{current?.status ? current.status.toUpperCase() : "PENDING"}</div>
+              </div>
+              <div className="rounded-lg border border-border bg-muted/20 p-4">
+                <div className="text-xs text-muted-foreground">Cycle</div>
+                <div className="mt-1 font-semibold">{current?.period ?? new Date().getFullYear().toString()}</div>
+              </div>
+              <div className="rounded-lg border border-border bg-muted/20 p-4">
+                <div className="text-xs text-muted-foreground">Approved</div>
+                <div className="mt-1 font-semibold">{current?.status === "approved" && current?.supervisor_reviewed_at ? new Date(current.supervisor_reviewed_at).toLocaleDateString() : "—"}</div>
+              </div>
+              <div className="rounded-lg border border-border bg-muted/20 p-4">
+                <div className="text-xs text-muted-foreground">Approved average</div>
+                <div className="mt-1 font-semibold">{data?.approvedAverageScore != null ? `${data.approvedAverageScore.toFixed(1)}%` : "—"}</div>
+              </div>
+            </div>
             <div className="mt-6 grid grid-cols-2 gap-3 text-center text-xs sm:grid-cols-5">
               {[
                 ["Poor", "≤49%"],
@@ -181,7 +199,7 @@ function Dashboard() {
           </Card>
 
           {/* Pending */}
-          <Card className="p-6">
+        <Card className="p-6">
             <h2 className="font-display text-lg font-bold">Pending actions</h2>
             <ul className="mt-4 space-y-3 text-sm">
               {!current && (

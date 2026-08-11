@@ -34,7 +34,7 @@ type Row = {
 function SearchPage() {
   const { user } = Route.useRouteContext();
   const { data: roles, isLoading } = useRoles(user.id);
-  const allowed = hasAnyRole(roles, ["governor", "cec", "chief_officer", "director", "supervisor", "system_admin", "super_admin", "hr"]);
+  const allowed = hasAnyRole(roles, ["governor", "cec", "chief_officer", "director", "supervisor", "system_admin", "super_admin", "hr", "external_assessor"]);
   const searchFn = useServerFn(searchEmployees);
 
   const [mode, setMode] = useState<"id_number" | "personal_number">("id_number");

@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Plus, Upload, MessageCircle, Paperclip, History } from "lucide-react";
+import { useServerFn } from "@tanstack/react-start";
+import { createContinuousReview, updateContinuousReview } from "@/lib/appraisal.functions";
 
 export const Route = createFileRoute("/_authenticated/continuous-review")({
   head: () => ({ meta: [{ title: "Continuous Review — Bungoma CPMS" }] }),
@@ -78,6 +80,8 @@ function ContinuousReviewPage() {
   const [mitigation, setMitigation] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
+  const createCrFn = useServerFn(createContinuousReview);
+  const updateCrFn = useServerFn(updateContinuousReview);
 
   async function submitNew() {
     if (!appraisalId || !achievement.trim()) return toast.error("Enter an achievement");
@@ -111,17 +115,17 @@ function ContinuousReviewPage() {
         evidence_filename = file.name;
         evidence_mime = file.type;
       }
-      const { error } = await supabase.from("continuous_reviews").insert({
-        employee_id: user.id,
-        appraisal_id: appraisalId,
+      await createCrFn({ data: {
+        appraisalId: appraisalId,
         achievement: achievement.trim(),
-        progress_status: status,
-        progress_comment: comment || null,
+        progressStatus: status,
+        progressComment: comment || null,
         challenges: challenges || null,
         mitigation: mitigation || null,
-        evidence_path, evidence_filename, evidence_mime,
-      });
-      if (error) throw error;
+        evidencePath: evidence_path,
+        evidenceFilename: evidence_filename,
+        evidenceMime: evidence_mime,
+      } });
       toast.success("Progress update recorded");
       setOpenNew(false);
       setAchievement(""); setComment(""); setChallenges(""); setMitigation(""); setFile(null); setStatus("in_progress");
@@ -140,12 +144,11 @@ function ContinuousReviewPage() {
   async function addSupervisorComment(id: string, current: string) {
     const text = prompt("Supervisor comment", current ?? "");
     if (text === null) return;
-    const { error } = await supabase.from("continuous_reviews").update({
-      supervisor_comment: text,
-      supervisor_id: user.id,
-      supervisor_commented_at: new Date().toISOString(),
-    }).eq("id", id);
-    if (error) return toast.error(error.message);
+    try {
+      await updateCrFn({ data: { id, supervisorComment: text || null } });
+    } catch (e) {
+      return toast.error(e instanceof Error ? e.message : "Failed to save");
+    }
     toast.success("Comment saved");
     qc.invalidateQueries({ queryKey: ["cr-list", appraisalId] });
   }

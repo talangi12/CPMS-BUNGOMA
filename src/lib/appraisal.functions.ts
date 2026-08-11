@@ -1,0 +1,848 @@
+import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { dispatchEmail, renderTemplate } from "./notify.functions";
+
+async function safeAppraisalUpdate(supabaseAdmin: any, id: string, payload: Record<string, unknown>) {
+  const runUpdate = async (candidate: Record<string, unknown>) => {
+    const { error } = await supabaseAdmin.from("appraisals").update(candidate).eq("id", id);
+    return error;
+  };
+
+  const parseMissingColumn = (msg?: string | null): string | null => {
+    if (!msg) return null;
+    const match = msg.match(/Could not find the '([^']+)' column/);
+    return match ? match[1] : null;
+  };
+
+  const tryPayload = async (candidate: Record<string, unknown>) => {
+    const { error } = await supabaseAdmin.from("appraisals").update(candidate).eq("id", id);
+    return error;
+  };
+
+  const { error } = await supabaseAdmin.from("appraisals").update(payload).eq("id", id);
+  if (!error) return;
+
+  if (error?.code !== "PGRST204") {
+    throw error;
+  }
+
+  const fallbackAttempts = new Set<string>([
+    "supervisor_comments",
+    "supervisor_comment",
+    "submitted_at",
+    "returned_at",
+    "approved_at",
+    "approved_by",
+    "reopened_at",
+    "reopened_by",
+    "resubmissions_count",
+    "supervisor_reviewed_at",
+    "supervisor_final_recommendation",
+  ]);
+
+  const originalPayload = { ...payload } as Record<string, unknown>;
+  const stripField = async (field: string, candidate: Record<string, unknown>) => {
+    if ((candidate as any)[field] === undefined) return null;
+    const copy = { ...candidate } as Record<string, unknown>;
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+    delete (copy as any)[field];
+    const err = await tryPayload(copy);
+    return err ? { error: err, payload: copy } : { error: null, payload: copy };
+  };
+
+  let currentPayload = { ...originalPayload };
+
+  // If plural supervisor_comments exists, try singular variant first.
+  if ((originalPayload as any).supervisor_comments !== undefined) {
+    const copy = { ...originalPayload } as Record<string, unknown>;
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+    delete (copy as any).supervisor_comments;
+    (copy as any).supervisor_comment = (originalPayload as any).supervisor_comments;
+    const err = await tryPayload(copy);
+    if (!err) return;
+  }
+
+  // Try removing supervisor comment keys entirely.
+  {
+    const copy = { ...originalPayload } as Record<string, unknown>;
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+    delete (copy as any).supervisor_comments;
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+    delete (copy as any).supervisor_comment;
+    const err = await tryPayload(copy);
+    if (!err) return;
+  }
+
+  let lastError = error;
+  const maxIterations = 8;
+  for (let attempt = 0; attempt < maxIterations; attempt += 1) {
+    const missingField = parseMissingColumn(lastError?.message);
+    if (missingField) {
+      fallbackAttempts.add(missingField);
+    }
+
+    let progress = false;
+    for (const field of Array.from(fallbackAttempts)) {
+      if ((currentPayload as any)[field] === undefined) continue;
+      const result = await stripField(field, currentPayload);
+      if (!result) continue;
+      if (!result.error) {
+        return;
+      }
+      currentPayload = result.payload;
+      lastError = result.error;
+      progress = true;
+      break;
+    }
+
+    if (!progress) break;
+  }
+
+  throw lastError;
+}
+
+export const createAppraisal = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i) => z.object({
+    employeeId: z.string().uuid(),
+    period: z.string(),
+    supervisorId: z.string().uuid().nullable(),
+  }).parse(i))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    
+
+    const { data: created, error } = await supabaseAdmin.from("appraisals").insert({
+      employee_id: data.employeeId,
+      period: data.period,
+      status: "draft",
+      chosen_supervisor_id: data.supervisorId ?? null,
+    }).select().single();
+
+    if (error) throw error;
+    return created;
+  });
+
+export const saveAppraisal = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i) => z.object({
+    appraisalId: z.string().uuid(),
+    supervisorId: z.string().uuid().nullable(),
+    status: z.string(),
+    rejectionReason: z.string().nullable(),
+    selfCommitments: z.string().nullable(),
+    selfResourcesNeeded: z.string().nullable(),
+    selfRecommendations: z.string().nullable(),
+    selfTrainingNeeds: z.string().nullable(),
+    selfAdditional: z.string().nullable(),
+    cycleSignoffs: z.record(z.unknown()).nullable(),
+    targets: z.array(z.object({
+      id: z.string().uuid().optional(),
+      target: z.string(),
+      performance_indicator: z.number().nullable(),
+      weight: z.number().nullable(),
+      expected_outcome: z.string().nullable(),
+      achieved_result: z.number().nullable(),
+      score: z.number().nullable(),
+      sort_order: z.number().optional(),
+    })),
+    deleteTargetIds: z.array(z.string().uuid()).optional(),
+  }).parse(i))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: existingAppraisal, error: lookupError } = await supabaseAdmin
+      .from("appraisals")
+      .select("employee_id, status, resubmissions_count")
+      .eq("id", data.appraisalId)
+      .maybeSingle();
+
+    if (lookupError) throw lookupError;
+    if (!existingAppraisal) throw new Error("Appraisal not found");
+    if (existingAppraisal.employee_id !== context.userId) {
+      throw new Error("Unauthorized");
+    }
+
+    // Prevent the appraisee from editing once the appraisal is submitted/initial-approved/final-approved
+    const blockedStatuses = ["submitted", "initial_approved", "approved"];
+    if (blockedStatuses.includes(String(existingAppraisal.status))) {
+      throw new Error("Appraisal is under review and cannot be edited");
+    }
+
+    if (data.deleteTargetIds?.length) {
+      const { error } = await supabaseAdmin.from("targets").delete().in("id", data.deleteTargetIds);
+      if (error) throw error;
+    }
+
+    const insertedTargets: Array<{ id: string }> = [];
+    for (const target of data.targets) {
+      const payload: Record<string, any> = {
+        appraisal_id: data.appraisalId,
+        agreed_performance_target: target.target,
+        performance_indicator: target.performance_indicator,
+        weight: target.weight,
+        expected_outcome: target.expected_outcome,
+        achieved_result: target.achieved_result,
+        score: target.score,
+      };
+      if (typeof target.sort_order === "number") payload.sort_order = target.sort_order;
+
+      if (target.id) {
+        const { error } = await supabaseAdmin.from("targets").update(payload as any).eq("id", target.id);
+        if (error) throw error;
+      } else {
+        const { data: createdTarget, error } = await supabaseAdmin
+          .from("targets")
+          .insert(payload)
+          .select("id")
+          .single();
+
+        if (error) throw error;
+        if (createdTarget) {
+          insertedTargets.push({ id: createdTarget.id });
+        }
+      }
+    }
+
+    const appraisalUpdate: Record<string, unknown> = {
+      chosen_supervisor_id: data.supervisorId ?? null,
+      status: data.status,
+      rejection_reason: data.rejectionReason,
+      self_commitments: data.selfCommitments,
+      self_resources_needed: data.selfResourcesNeeded,
+      self_recommendations: data.selfRecommendations,
+      self_training_needs: data.selfTrainingNeeds,
+      self_additional: data.selfAdditional,
+      cycle_signoffs: data.cycleSignoffs ?? null,
+    };
+
+    if (data.status === "submitted" && existingAppraisal.status === "rejected") {
+      appraisalUpdate.resubmissions_count = (existingAppraisal.resubmissions_count ?? 0) + 1;
+      appraisalUpdate.returned_at = null;
+    }
+
+    // On initial submit create an appraisal_versions snapshot and mark submitted_at
+    if (data.status === "submitted" && existingAppraisal.status !== "submitted") {
+      try {
+        const { data: currentAppraisal, error: fetchError } = await supabaseAdmin
+          .from("appraisals")
+          .select("*, targets(*)")
+          .eq("id", data.appraisalId)
+          .maybeSingle();
+        if (fetchError) throw fetchError;
+
+        const snap = { appraisal: currentAppraisal, targets: currentAppraisal?.targets ?? [] };
+
+        const { count } = await supabaseAdmin.from("appraisal_versions").select("id", { count: "exact", head: true }).eq("appraisal_id", data.appraisalId);
+        await supabaseAdmin.from("appraisal_versions").insert({
+          appraisal_id: data.appraisalId,
+          version_no: (count ?? 0) + 1,
+          snapshot: snap as never,
+          changed_by: context.userId,
+          change_summary: "Submitted by appraisee",
+        });
+
+        appraisalUpdate.submitted_at = new Date().toISOString();
+      } catch (e) {
+        // If snapshotting fails, surface the error so the submit doesn't silently proceed
+        throw e;
+      }
+    }
+
+    try {
+      await safeAppraisalUpdate(supabaseAdmin, data.appraisalId, appraisalUpdate);
+    } catch (updateError) {
+      throw updateError;
+    }
+
+    if (data.status === "submitted" && existingAppraisal.status !== "submitted") {
+      // Notify the chosen supervisor (if any). Fetch latest appraisal row to obtain period and chosen supervisor.
+      const { data: fresh } = await supabaseAdmin.from("appraisals").select("chosen_supervisor_id, period, employee_id").eq("id", data.appraisalId).maybeSingle();
+      const supervisorId = fresh?.chosen_supervisor_id ?? data.supervisorId ?? null;
+      const periodLabel = fresh?.period ?? "";
+
+      if (supervisorId) {
+        const { data: supProfile } = await supabaseAdmin.from("profiles").select("email, full_name").eq("id", supervisorId).maybeSingle();
+        const { data: appraiseeProfile } = await supabaseAdmin.from("profiles").select("full_name").eq("id", fresh?.employee_id ?? context.userId).maybeSingle();
+
+        if (supProfile?.email) {
+          try {
+            const tmpl = renderTemplate("appraisal_submitted", { period: periodLabel ?? "", name: appraiseeProfile?.full_name ?? "Officer" });
+            await dispatchEmail({
+              to: supProfile.email,
+              to_user_id: supervisorId,
+              event_type: "appraisal_submitted",
+              subject: tmpl.subject,
+              html: tmpl.html,
+              related_appraisal_id: data.appraisalId,
+              related_employee_id: fresh?.employee_id ?? context.userId,
+            });
+          } catch {
+            // dispatchEmail performs audit logging on failure; do not block submit.
+          }
+        }
+      }
+    }
+
+    return { insertedTargets };
+  });
+
+export const getSupervisorInbox = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i) => z.object({
+    supervisorId: z.string().uuid(),
+  }).parse(i))
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // Fetch appraisals assigned to this supervisor (bypasses RLS via service-role)
+    // Include both 'submitted' and 'initial_approved' so supervisors retain a workflow item for continuous review and end-of-quarter actions.
+    const { data: appraisals, error: appraisalsError } = await supabaseAdmin
+      .from("appraisals")
+      .select("id, period, status, total_score, rating, employee_id, created_at, employee_signed_at, supervisor_reviewed_at")
+      .eq("chosen_supervisor_id", data.supervisorId)
+      .in("status", ["submitted", "initial_approved"])
+      .order("created_at", { ascending: false });
+
+    if (appraisalsError) throw appraisalsError;
+
+    const merged = appraisals ?? [];
+    const employeeIds = Array.from(new Set(merged.map((a) => a.employee_id)));
+
+    // Fetch employee profiles (also via service-role to bypass RLS)
+    const profiles = employeeIds.length
+      ? (await supabaseAdmin.from("profiles")
+          .select("id, full_name, designation, department")
+          .in("id", employeeIds)).data ?? []
+      : [];
+
+    const profileMap = new Map(profiles.map((p) => [p.id, p]));
+
+    return merged.map((a) => ({
+      ...a,
+      profile: profileMap.get(a.employee_id),
+    }));
+  });
+
+export const getAppraisalForEmployee = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const period = `FY ${new Date().getFullYear()}/${(new Date().getFullYear() + 1).toString().slice(-2)}`;
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from("profiles")
+      .select("*")
+      .eq("id", context.userId)
+      .maybeSingle();
+    if (profileError) throw profileError;
+
+    const { data: existing, error: existingError } = await supabaseAdmin
+      .from("appraisals")
+      .select("*, targets(*)")
+      .eq("employee_id", context.userId)
+      .eq("period", period)
+      .maybeSingle();
+    if (existingError) throw existingError;
+
+    let appraisal = existing;
+    if (!appraisal) {
+      const { data: fallback, error: fallbackError } = await supabaseAdmin
+        .from("appraisals")
+        .select("*, targets(*)")
+        .eq("employee_id", context.userId)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (fallbackError) throw fallbackError;
+      appraisal = fallback;
+    }
+
+    const dept = profile?.department ?? "";
+    const { data: supervisors, error: supervisorError } = await supabaseAdmin.rpc(
+      "list_supervisors_for_dept",
+      { _dept: dept },
+    );
+    if (supervisorError) throw supervisorError;
+
+    const { data: cycleActive, error: cycleError } = dept
+      ? await supabaseAdmin.rpc("cycle_active_for_dept", { _dept: dept })
+      : { data: null };
+    if (cycleError) throw cycleError;
+
+    const { data: workplans, error: workplanError } = await supabaseAdmin
+      .from("workplans")
+      .select("*")
+      .eq("assignee_id", context.userId)
+      .order("created_at", { ascending: false });
+    if (workplanError) throw workplanError;
+
+    return {
+      profile,
+      existing: appraisal,
+      supervisors: supervisors ?? [],
+      cycleActive: cycleActive === true,
+      workplans: workplans ?? [],
+      redirectToContinuousReview: appraisal?.status === "initial_approved",
+    };
+  });
+
+export const getDashboardMetrics = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const [{ data: profile, error: profileError }, { data: appraisals, error: appraisalsError }] = await Promise.all([
+      supabaseAdmin.from("profiles").select("*").eq("id", context.userId).maybeSingle(),
+      supabaseAdmin.from("appraisals").select("id, period, status, total_score, rating, supervisor_reviewed_at, employee_signed_at, created_at, updated_at").eq("employee_id", context.userId).order("created_at", { ascending: false }),
+    ]);
+    if (profileError) throw profileError;
+    if (appraisalsError) throw appraisalsError;
+
+    const currentAppraisal = appraisals?.[0] ?? null;
+    const statusCounts = {
+      approved: 0,
+      submitted: 0,
+      initial_approved: 0,
+      rejected: 0,
+      draft: 0,
+    } as Record<string, number>;
+    const approvedScores: number[] = [];
+    for (const appraisal of appraisals ?? []) {
+      statusCounts[appraisal.status] = (statusCounts[appraisal.status] ?? 0) + 1;
+      if (appraisal.status === "approved" && appraisal.total_score != null) {
+        approvedScores.push(Number(appraisal.total_score));
+      }
+    }
+
+    const reviewCountResult = currentAppraisal?.id
+      ? await supabaseAdmin.from("continuous_reviews").select("id", { count: "exact", head: true }).eq("appraisal_id", currentAppraisal.id)
+      : { count: 0, error: null };
+    if (reviewCountResult.error) throw reviewCountResult.error;
+
+    const pendingSupervisorReviews = (await supabaseAdmin.from("appraisals").select("id", { count: "exact", head: true }).eq("chosen_supervisor_id", context.userId).in("status", ["submitted", "initial_approved"])) as { count: number | null; error: any };
+    if (pendingSupervisorReviews.error) throw pendingSupervisorReviews.error;
+
+    const approvedAverageScore = approvedScores.length > 0
+      ? approvedScores.reduce((sum, value) => sum + value, 0) / approvedScores.length
+      : null;
+
+    return {
+      profile,
+      appraisals: appraisals ?? [],
+      currentAppraisal,
+      statusCounts,
+      approvedAverageScore,
+      continuousReviewCount: reviewCountResult.count ?? 0,
+      pendingSupervisorReviews: pendingSupervisorReviews.count ?? 0,
+    };
+  });
+
+export const getExternalAssessorSupervisors = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async () => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: supervisorRoles, error: roleError } = await supabaseAdmin
+      .from("user_roles")
+      .select("user_id")
+      .eq("role", "supervisor");
+    if (roleError) throw roleError;
+
+    const supervisorIds = Array.from(new Set((supervisorRoles ?? []).map((row: any) => row.user_id))).filter(Boolean);
+    if (!supervisorIds.length) return [];
+
+    const { data: supervisors, error: profilesError } = await supabaseAdmin
+      .from("profiles")
+      .select("id, full_name, department, designation")
+      .in("id", supervisorIds)
+      .order("full_name", { ascending: true });
+    if (profilesError) throw profilesError;
+
+    const { data: employees, error: employeeError } = await supabaseAdmin
+      .from("profiles")
+      .select("supervisor_id")
+      .in("supervisor_id", supervisorIds);
+    if (employeeError) throw employeeError;
+
+    const counts = new Map<string, number>();
+    for (const employee of employees ?? []) {
+      const supId = employee.supervisor_id as string | null;
+      if (!supId) continue;
+      counts.set(supId, (counts.get(supId) ?? 0) + 1);
+    }
+
+    return (supervisors ?? []).map((sup: any) => ({
+      ...sup,
+      employee_count: counts.get(sup.id) ?? 0,
+    }));
+  });
+
+export const getExternalAssessorEmployees = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i) => z.object({ supervisorId: z.string().uuid() }).parse(i))
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: employees, error: employeesError } = await supabaseAdmin
+      .from("profiles")
+      .select("id, full_name, department, designation, id_number, personal_number, employment_status, supervisor_id")
+      .eq("supervisor_id", data.supervisorId)
+      .order("full_name", { ascending: true });
+    if (employeesError) throw employeesError;
+
+    const employeeIds = Array.from(new Set((employees ?? []).map((emp: any) => emp.id))).filter(Boolean);
+    const { data: appraisals, error: appraisalsError } = await supabaseAdmin
+      .from("appraisals")
+      .select("id, employee_id, period, status, total_score, rating, supervisor_reviewed_at, updated_at, created_at")
+      .in("employee_id", employeeIds);
+    if (appraisalsError) throw appraisalsError;
+
+    const appraisalMap = new Map<string, any>();
+    for (const appraisal of appraisals ?? []) {
+      const existing = appraisalMap.get(appraisal.employee_id);
+      const currentUpdatedAt = new Date(appraisal.updated_at ?? appraisal.created_at ?? 0).getTime();
+      const existingUpdatedAt = existing ? new Date(existing.updated_at ?? existing.created_at ?? 0).getTime() : 0;
+      if (!existing || currentUpdatedAt > existingUpdatedAt) {
+        appraisalMap.set(appraisal.employee_id, appraisal);
+      }
+    }
+
+    const reviewRows = employeeIds.length
+      ? await supabaseAdmin.from("continuous_reviews").select("id, appraisal_id", { count: "exact", head: false }).in("appraisal_id", Array.from(new Set((appraisals ?? []).map((a: any) => a.id))))
+      : { data: [], error: null };
+    if (reviewRows.error) throw reviewRows.error;
+
+    const reviewCounts = new Map<string, number>();
+    for (const row of reviewRows.data ?? []) {
+      reviewCounts.set(row.appraisal_id, (reviewCounts.get(row.appraisal_id) ?? 0) + 1);
+    }
+
+    return (employees ?? []).map((emp: any) => {
+      const appraisal = appraisalMap.get(emp.id) ?? null;
+      return {
+        ...emp,
+        latestAppraisal: appraisal,
+        progressUpdates: appraisal?.id ? reviewCounts.get(appraisal.id) ?? 0 : 0,
+      };
+    });
+  });
+
+// Create a continuous review entry (server-side validation)
+export const createContinuousReview = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i) => z.object({
+    appraisalId: z.string().uuid(),
+    achievement: z.string(),
+    progressStatus: z.string(),
+    progressComment: z.string().nullable(),
+    challenges: z.string().nullable(),
+    mitigation: z.string().nullable(),
+    evidencePath: z.string().nullable(),
+    evidenceFilename: z.string().nullable(),
+    evidenceMime: z.string().nullable(),
+  }).parse(i))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // Ensure appraisal exists and is in initial_approved state so continuous review is allowed
+    const { data: app, error: appErr } = await supabaseAdmin.from("appraisals").select("employee_id, status, chosen_supervisor_id").eq("id", data.appraisalId).maybeSingle();
+    if (appErr) throw appErr;
+    if (!app) throw new Error("Appraisal not found");
+
+    if (app.status !== "initial_approved") {
+      throw new Error("Continuous review is not enabled for this appraisal");
+    }
+
+    // Only the appraisee may create their own progress update
+    if (String(app.employee_id) !== String(context.userId)) {
+      throw new Error("Not authorised to create progress updates for this appraisal");
+    }
+
+    const insertPayload: Record<string, unknown> = {
+      employee_id: context.userId,
+      appraisal_id: data.appraisalId,
+      achievement: data.achievement,
+      progress_status: data.progressStatus,
+      progress_comment: data.progressComment ?? null,
+      challenges: data.challenges ?? null,
+      mitigation: data.mitigation ?? null,
+      evidence_path: data.evidencePath ?? null,
+      evidence_filename: data.evidenceFilename ?? null,
+      evidence_mime: data.evidenceMime ?? null,
+    };
+
+    const { error } = await supabaseAdmin.from("continuous_reviews").insert(insertPayload as any);
+    if (error) throw error;
+    return { success: true };
+  });
+
+export const updateContinuousReview = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i) => z.object({ id: z.string().uuid(), supervisorComment: z.string().nullable() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: cr, error: crErr } = await supabaseAdmin.from("continuous_reviews").select("appraisal_id, employee_id").eq("id", data.id).maybeSingle();
+    if (crErr) throw crErr;
+    if (!cr) throw new Error("Progress update not found");
+
+    // Ensure the caller is the chosen supervisor for the appraisal
+    const { data: app, error: appErr } = await supabaseAdmin.from("appraisals").select("chosen_supervisor_id").eq("id", cr.appraisal_id).maybeSingle();
+    if (appErr) throw appErr;
+    if (!app) throw new Error("Appraisal not found");
+
+    const isAdminResult = (await supabaseAdmin.rpc("is_admin_viewer", { _uid: context.userId })) as { data: boolean | null } | any;
+    const isAdmin = isAdminResult?.data === true;
+    if (app.chosen_supervisor_id !== context.userId && !isAdmin) {
+      throw new Error("Not authorised to add supervisor comments");
+    }
+
+    const { error } = await supabaseAdmin.from("continuous_reviews").update({ supervisor_comment: data.supervisorComment ?? null, supervisor_id: context.userId, supervisor_commented_at: new Date().toISOString() }).eq("id", data.id);
+    if (error) throw error;
+    return { success: true };
+  });
+
+export const getSupervisorReview = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i) => z.object({
+    appraisalId: z.string().uuid(),
+  }).parse(i))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: appraisal, error: appraisalError } = await supabaseAdmin
+      .from("appraisals")
+      .select("*, targets(*)")
+      .eq("id", data.appraisalId)
+      .maybeSingle();
+
+    if (appraisalError) throw appraisalError;
+    if (!appraisal) throw new Error("Appraisal not found");
+
+    const normalizedTargets = (appraisal.targets ?? []).map((t: any) => ({
+      ...t,
+      target: t.agreed_performance_target ?? "",
+      indicator: t.performance_indicator != null ? String(t.performance_indicator) : "",
+      expected_outcome: t.expected_outcome,
+      achieved_result: t.achieved_result,
+      score: t.score,
+      weight: t.weight,
+      sort_order: t.sort_order,
+    }));
+
+    const appraisalWithTargets = { ...appraisal, targets: normalizedTargets };
+
+    const isAdminResult = (await supabaseAdmin.rpc("is_admin_viewer", { _uid: context.userId })) as { data: boolean | null } | any;
+    const isAdmin = isAdminResult?.data === true;
+    if (isAdminResult && (isAdminResult as any).error) throw (isAdminResult as any).error;
+
+    if (appraisal.chosen_supervisor_id !== context.userId && !isAdmin) {
+      throw new Error("Appraisal not found");
+    }
+
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from("profiles")
+      .select("*")
+      .eq("id", appraisal.employee_id)
+      .maybeSingle();
+
+    if (profileError) throw profileError;
+
+    return { appraisal: appraisalWithTargets, profile };
+  });
+
+export const updateSupervisorNotes = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i) => z.object({
+    appraisalId: z.string().uuid(),
+    supervisorComments: z.string().nullable(),
+    supervisorFinalRecommendation: z.string().nullable(),
+    totalScore: z.number().nullable(),
+    rating: z.string().nullable(),
+  }).parse(i))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: appraisal, error: appraisalError } = await supabaseAdmin
+      .from("appraisals")
+      .select("chosen_supervisor_id")
+      .eq("id", data.appraisalId)
+      .maybeSingle();
+    if (appraisalError) throw appraisalError;
+    if (!appraisal) throw new Error("Appraisal not found");
+
+const isAdminResult = (await supabaseAdmin.rpc("is_admin_viewer", { _uid: context.userId })) as { data: boolean | null };
+    const isAdmin = isAdminResult?.data === true;
+    if (isAdminResult && (isAdminResult as any).error) throw (isAdminResult as any).error;
+
+    if (appraisal.chosen_supervisor_id !== context.userId && !isAdmin) {
+      throw new Error("Not authorised to update notes for this appraisal");
+    }
+
+    const payload: Record<string, unknown> = {
+      supervisor_comments: data.supervisorComments ?? null,
+      supervisor_final_recommendation: data.supervisorFinalRecommendation ?? null,
+    };
+    if (data.totalScore != null) payload.total_score = data.totalScore;
+    if (data.rating != null) payload.rating = data.rating;
+
+    try {
+      await safeAppraisalUpdate(supabaseAdmin, data.appraisalId, payload);
+    } catch (error) {
+      throw error;
+    }
+
+    return { success: true };
+  });
+
+export const reviewSupervisorAppraisal = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i) => z.object({
+    appraisalId: z.string().uuid(),
+    action: z.enum(["approved", "rejected", "approved_initial"]),
+    rejectionReason: z.string().nullable(),
+    supervisorComments: z.string().nullable(),
+    supervisorFinalRecommendation: z.string().nullable(),
+    totalScore: z.number().nullable(),
+    rating: z.string().nullable(),
+  }).parse(i))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    try {
+      console.log("[reviewSupervisorAppraisal] Starting approval for appraisal:", data.appraisalId, "action:", data.action, "userId:", context.userId);
+
+      const { data: appraisal, error: appraisalError } = await supabaseAdmin
+        .from("appraisals")
+      .select("chosen_supervisor_id, status, employee_id")
+      .eq("id", data.appraisalId)
+      .maybeSingle();
+
+    console.log("[reviewSupervisorAppraisal] Fetched appraisal:", { appraisal, appraisalError });
+    if (appraisalError) throw appraisalError;
+    if (!appraisal) throw new Error("Appraisal not found");
+
+    const isAdminResult = (await supabaseAdmin.rpc("is_admin_viewer", { _uid: context.userId })) as { data: boolean | null } | any;
+    const isAdmin = isAdminResult?.data === true;
+    console.log("[reviewSupervisorAppraisal] Admin check result:", { isAdmin, isAdminResult });
+    if (isAdminResult && (isAdminResult as any).error) throw (isAdminResult as any).error;
+
+    if (appraisal.chosen_supervisor_id !== context.userId && !isAdmin) {
+      throw new Error("Not authorised to review this appraisal");
+    }
+
+    const updatePayload: Record<string, unknown> = {
+      status: data.action === "approved_initial" ? "initial_approved" : data.action,
+      rejection_reason: data.action === "rejected" ? data.rejectionReason : null,
+      supervisor_reviewed_at: new Date().toISOString(),
+      supervisor_comments: data.supervisorComments ?? null,
+      supervisor_final_recommendation: data.supervisorFinalRecommendation ?? null,
+    };
+
+    // mark approved_by/approved_at when final approved
+    if (data.action === "approved") {
+      updatePayload.approved_at = new Date().toISOString();
+      updatePayload.approved_by = context.userId;
+    }
+
+    if (data.totalScore != null) updatePayload.total_score = data.totalScore;
+    if (data.rating != null) updatePayload.rating = data.rating;
+
+    console.log("[reviewSupervisorAppraisal] Update payload:", updatePayload);
+
+    // If approving or rejecting, snapshot current state for audit/versioning
+    try {
+      const { data: currentApp, error: fetchCurrentError } = await supabaseAdmin.from("appraisals").select("*, targets(*)").eq("id", data.appraisalId).maybeSingle();
+      if (fetchCurrentError) throw fetchCurrentError;
+      const snap = { appraisal: currentApp, targets: currentApp?.targets ?? [] };
+      const { count } = await supabaseAdmin.from("appraisal_versions").select("id", { count: "exact", head: true }).eq("appraisal_id", data.appraisalId);
+      await supabaseAdmin.from("appraisal_versions").insert({
+        appraisal_id: data.appraisalId, version_no: (count ?? 0) + 1, snapshot: snap as never, changed_by: context.userId,
+        change_summary: `Supervisor ${data.action}`,
+      });
+
+      await safeAppraisalUpdate(supabaseAdmin, data.appraisalId, updatePayload);
+    } catch (updateError) {
+      console.log("[reviewSupervisorAppraisal] Update result:", { updateError });
+      throw updateError;
+    }
+
+    // send notification to appraisee (best-effort)
+    try {
+      const { data: appraisalRow } = await supabaseAdmin.from("appraisals").select("employee_id, period, total_score, rating").eq("id", data.appraisalId).maybeSingle();
+      if (appraisalRow?.employee_id) {
+        const event = data.action === "approved" ? "appraisal_approved" : "appraisal_rejected";
+        const vars: Record<string, string> = { period: appraisalRow.period ?? "", score: String(appraisalRow.total_score ?? ""), rating: String(appraisalRow.rating ?? "") };
+        if (data.action === "rejected") vars.reason = data.rejectionReason ?? "";
+        // call sendEventEmail (server fn) — use requireSupabaseAuth already applied; context access allowed via server call
+        const { sendEventEmail } = await import("./notify.functions");
+        // Fire-and-forget; any errors are logged server-side inside sendEventEmail/dispatchEmail
+        await sendEventEmail({ data: { event_type: event, to_user_id: appraisalRow.employee_id, vars, related_appraisal_id: data.appraisalId } });
+      }
+    } catch (e) {
+      console.warn("[reviewSupervisorAppraisal] Notification failed", e);
+    }
+
+    console.log("[reviewSupervisorAppraisal] Success!");
+    return { success: true };
+    } catch (error) {
+      console.error("[reviewSupervisorAppraisal] Error:", error);
+      throw error;
+    }
+  });
+
+export const reopenSupervisorAppraisal = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i) => z.object({ appraisalId: z.string().uuid(), reason: z.string().nullable() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: appraisal, error: appraisalError } = await supabaseAdmin.from("appraisals").select("chosen_supervisor_id, status, employee_id").eq("id", data.appraisalId).maybeSingle();
+    if (appraisalError) throw appraisalError;
+    if (!appraisal) throw new Error("Appraisal not found");
+
+    const isAdminResult = (await supabaseAdmin.rpc("is_admin_viewer", { _uid: context.userId })) as { data: boolean | null } | any;
+    const isAdmin = isAdminResult?.data === true;
+    if (isAdminResult && (isAdminResult as any).error) throw (isAdminResult as any).error;
+
+    if (appraisal.chosen_supervisor_id !== context.userId && !isAdmin) {
+      throw new Error("Not authorised to reopen this appraisal");
+    }
+
+    try {
+      // snapshot current state
+      const { data: currentApp, error: fetchCurrentError } = await supabaseAdmin.from("appraisals").select("*, targets(*)").eq("id", data.appraisalId).maybeSingle();
+      if (fetchCurrentError) throw fetchCurrentError;
+      const snap = { appraisal: currentApp, targets: currentApp?.targets ?? [] };
+      const { count } = await supabaseAdmin.from("appraisal_versions").select("id", { count: "exact", head: true }).eq("appraisal_id", data.appraisalId);
+      await supabaseAdmin.from("appraisal_versions").insert({ appraisal_id: data.appraisalId, version_no: (count ?? 0) + 1, snapshot: snap as never, changed_by: context.userId, change_summary: `Supervisor reopened for edits` });
+
+      const payload: Record<string, unknown> = {
+        status: "submitted",
+        reopen_reason: data.reason ?? null,
+        reopened_at: new Date().toISOString(),
+        reopened_by: context.userId,
+        // clear supervisor_reviewed_at so appraisee sees as editable
+        supervisor_reviewed_at: null,
+      };
+
+      await safeAppraisalUpdate(supabaseAdmin, data.appraisalId, payload);
+
+      // notify appraisee
+      try {
+        const { data: appraisalRow } = await supabaseAdmin.from("appraisals").select("employee_id, period").eq("id", data.appraisalId).maybeSingle();
+        if (appraisalRow?.employee_id) {
+          const { sendEventEmail } = await import("./notify.functions");
+          await sendEventEmail({ data: { event_type: "appraisal_reopened", to_user_id: appraisalRow.employee_id, vars: { period: appraisalRow.period ?? "", reason: data.reason ?? "" }, related_appraisal_id: data.appraisalId } });
+        }
+      } catch (e) {
+        console.warn("[reopenSupervisorAppraisal] Notification failed", e);
+      }
+
+      return { success: true };
+    } catch (e) {
+      throw e;
+    }
+  });
