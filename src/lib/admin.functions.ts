@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const ROLES = [
-  "employee", "supervisor", "hr", "system_admin", "super_admin",
+  "employee", "supervisor", "external_assessor", "hr", "system_admin", "super_admin",
   "appeals_committee", "governor", "cec", "chief_officer", "director",
 ] as const;
 

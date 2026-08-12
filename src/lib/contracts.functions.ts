@@ -164,19 +164,38 @@ export const signContract = createServerFn({ method: "POST" })
     const { data: c, error } = await supabase.from("performance_contracts")
       .select("*").eq("id", data.id).single();
     if (error) throw new Error(error.message);
-    if (c.supervisor_id !== userId) {
-      const { data: isAdmin } = await supabase.rpc("has_role", { _user_id: userId, _role: "super_admin" });
-      if (!isAdmin) throw new Error("Only the assigned Senior Officer (supervisor) may sign at this step");
+    if (["signed", "locked"].includes(c.status)) throw new Error("Contract is already signed or locked");
+
+    const roleLevels = ["governor", "cec", "chief_officer", "director", "supervisor"] as const;
+    let signerRole: typeof roleLevels[number] | null = null;
+    for (const role of roleLevels) {
+      const { data: hasRole } = await supabase.rpc("has_role", { _user_id: userId, _role: role });
+      if (hasRole) { signerRole = role; break; }
     }
-    if (c.status !== "approved") throw new Error("Contract must be approved before signing");
+
+    const { data: isAdmin } = await supabase.rpc("has_role", { _user_id: userId, _role: "super_admin" });
+    if (!signerRole && !isAdmin) throw new Error("You are not authorized to sign this contract");
+
+    if (!isAdmin) {
+      const validNextLevel: Record<typeof roleLevels[number], typeof roleLevels[number] | null> = {
+        governor: "cec",
+        cec: "chief_officer",
+        chief_officer: "director",
+        director: "supervisor",
+        supervisor: null,
+      };
+      if (signerRole && validNextLevel[signerRole] !== c.level) {
+        throw new Error("You may only sign contracts for the next level below your role in the hierarchy");
+      }
+    }
 
     // Prevent duplicate senior-officer sign
     const { data: existing } = await supabase.from("contract_signoffs")
       .select("id").eq("contract_id", data.id).eq("is_owner", false).maybeSingle();
-    if (existing) throw new Error("The Senior Officer has already signed this contract");
+    if (existing) throw new Error("A senior officer has already signed this contract");
 
     await supabase.from("contract_signoffs").insert({
-      contract_id: data.id, signer_id: userId, signer_role: c.level,
+      contract_id: data.id, signer_id: userId, signer_role: signerRole ?? c.level,
       signer_name: data.typed_name, signer_position: data.position ?? null,
       comment: data.comment ?? null, is_owner: false,
     });

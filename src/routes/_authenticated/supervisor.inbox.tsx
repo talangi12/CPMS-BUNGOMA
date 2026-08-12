@@ -1,11 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { AppHeader } from "@/components/AppHeader";
 import { Card } from "@/components/ui/card";
 import { RatingBadge } from "@/components/RatingBadge";
 import { Inbox, ArrowRight } from "lucide-react";
 import { useRoles, hasAnyRole } from "@/hooks/useRoles";
+import { useServerFn } from "@tanstack/react-start";
+import { getSupervisorInbox } from "@/lib/appraisal.functions";
 
 export const Route = createFileRoute("/_authenticated/supervisor/inbox")({
   head: () => ({ meta: [{ title: "Review Inbox — Bungoma CPMS" }] }),
@@ -15,23 +16,13 @@ export const Route = createFileRoute("/_authenticated/supervisor/inbox")({
 function SupervisorInbox() {
   const { user } = Route.useRouteContext();
   const { data: roles, isLoading: rolesLoading } = useRoles(user.id);
+  const fetchInbox = useServerFn(getSupervisorInbox);
 
   const { data: items = [], isLoading } = useQuery({
     queryKey: ["supervisor-inbox", user.id],
     enabled: hasAnyRole(roles, ["supervisor","chief_officer"]),
     queryFn: async () => {
-      const { data: own } = await supabase
-        .from("appraisals")
-        .select("id, period, status, total_score, rating, employee_id, created_at, employee_signed_at, supervisor_reviewed_at")
-        .eq("chosen_supervisor_id", user.id)
-        .order("created_at", { ascending: false });
-      const merged = own ?? [];
-      const ids = Array.from(new Set(merged.map((a) => a.employee_id)));
-      const profiles = ids.length
-        ? (await supabase.from("profiles").select("id, full_name, designation, department").in("id", ids)).data ?? []
-        : [];
-      const pmap = new Map(profiles.map((p) => [p.id, p]));
-      return merged.map((a) => ({ ...a, profile: pmap.get(a.employee_id) }));
+      return fetchInbox({ data: { supervisorId: user.id } });
     },
   });
 

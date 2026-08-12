@@ -59,6 +59,7 @@ function ContinuousReviewPage() {
   const selected = myAppraisals?.find((a) => a.id === appraisalId);
   const isOwner = selected?.employee_id === user.id;
   const isSupervisor = selected?.chosen_supervisor_id === user.id;
+  const isInitialApproved = selected?.status === "initial_approved";
 
   const { data: reviews } = useQuery({
     queryKey: ["cr-list", appraisalId],
@@ -182,7 +183,9 @@ function ContinuousReviewPage() {
 
         {appraisalId && isOwner && (
           <div className="mt-6 flex justify-end">
-            <Button onClick={() => setOpenNew((v) => !v)}><Plus className="mr-1.5 h-4 w-4" /> Log progress update</Button>
+            <Button onClick={() => setOpenNew((v) => !v)} disabled={!isInitialApproved}>
+              <Plus className="mr-1.5 h-4 w-4" /> {isInitialApproved ? "Log progress update" : "Locked — waiting supervisor approval"}
+            </Button>
           </div>
         )}
 

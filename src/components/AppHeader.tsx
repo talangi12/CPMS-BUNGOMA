@@ -3,7 +3,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import emblem from "@/assets/bungoma-emblem.png";
-import { LogOut, Menu, LayoutDashboard, FileText, Inbox, CalendarDays, CalendarRange, CalendarCheck, Gavel, ClipboardList, Activity, BarChart3, User, ShieldCheck, Users2, ChevronDown } from "lucide-react";
+import { LogOut, Menu, LayoutDashboard, FileText, Inbox, CalendarDays, CalendarRange, CalendarCheck, Gavel, ClipboardList, Activity, BarChart3, Search, User, ShieldCheck, Users2, ChevronDown } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { NotificationBell } from "@/components/NotificationBell";
 import { useRoles, hasAnyRole, hasAdminAccess, ROLE_LABELS } from "@/hooks/useRoles";
@@ -23,12 +23,12 @@ export function AppHeader({ authenticated = false, userId }: { authenticated?: b
   const { data: roles } = useRoles(userId);
   const { data: profile } = useQuery({
     queryKey: ["admin-profile-hint", userId],
-    enabled: !!userId,
+    enabled: Boolean(userId),
     queryFn: async () => {
       const { data, error } = await supabase
         .from("profiles")
         .select("designation, id_number, email")
-        .eq("id", userId)
+        .eq("id", userId ?? "")
         .maybeSingle();
       if (error) throw error;
       return data;
@@ -78,6 +78,7 @@ export function AppHeader({ authenticated = false, userId }: { authenticated?: b
 
   const insights: NavItem[] = [
     { to: "/reports", label: "Reports", icon: FileText, show: true },
+    { to: "/search", label: "Search", icon: Search, show: hasAnyRole(roles, ["governor","cec","chief_officer","director","supervisor","system_admin","super_admin","hr","external_assessor"]) },
     { to: "/spas-reports", label: "SPAS Forms", icon: FileText, show: isSupervisor || isAdmin },
     { to: "/analytics", label: "Analytics", icon: BarChart3, show: true },
   ];

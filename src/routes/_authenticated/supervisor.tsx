@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Outlet, useRouterState } from "@tanstack/react-router";
 import { PortalLanding } from "@/components/PortalLanding";
 import { FileText, Inbox, ClipboardList, Users, ShieldCheck } from "lucide-react";
 
@@ -9,6 +9,13 @@ export const Route = createFileRoute("/_authenticated/supervisor")({
 
 function SupervisorPortal() {
   const { user } = Route.useRouteContext();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const isExactSupervisorRoute = pathname === "/supervisor";
+
+  if (!isExactSupervisorRoute) {
+    return <Outlet />;
+  }
+
   return (
     <PortalLanding
       userId={user.id}

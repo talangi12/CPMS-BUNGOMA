@@ -21,7 +21,7 @@ export const Route = createFileRoute("/_authenticated/admin/users")({
 });
 
 const ROLES: AppRole[] = [
-  "employee", "supervisor", "hr", "system_admin", "super_admin",
+  "employee", "supervisor", "external_assessor", "hr", "system_admin", "super_admin",
   "appeals_committee", "governor", "cec", "chief_officer", "director",
 ];
 

@@ -18,6 +18,7 @@ export function getPortalRouteForRoles(roles: Array<RoleLike> | null | undefined
   if (normalized.includes("appeals_committee")) return "/appeals-committee";
   if (normalized.includes("dept_admin")) return "/department-admin";
   if (normalized.includes("supervisor")) return "/supervisor";
+  if (normalized.includes("external_assessor")) return "/external-assessor";
   return "/dashboard";
 }
 

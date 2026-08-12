@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { createHash } from "crypto";
+import { dispatchEmail } from "./notify.functions";
 
 function hashCode(c: string) {
   return createHash("sha256").update(c).digest("hex");
@@ -42,25 +43,39 @@ export const requestPasswordResetOtp = createServerFn({ method: "POST" })
       purpose: "reset",
     });
 
-    // Mock email + SMS delivery — logged for audit
+    // Send password-reset email via email provider; SMS remains logged as a fallback.
     const phoneMasked = prof.phone_number ? prof.phone_number.replace(/.(?=.{4})/g, "•") : "—";
     const emailMasked = prof.personal_email ? prof.personal_email.replace(/(.).+(@.+)/, "$1•••$2") : "—";
     const body = `Bungoma CPMS — password reset code: ${code}. Expires in 5 minutes.`;
 
-    await supabaseAdmin.from("notification_log").insert([
-      {
+    if (prof.personal_email) {
+      try {
+        await dispatchEmail({
+          to: prof.personal_email,
+          to_user_id: prof.user_id,
+          event_type: "password_reset_otp",
+          subject: "Password reset code — Bungoma CPMS",
+          html: `Dear ${prof.full_name ?? "Officer"},<br><br>Your password reset code is <strong>${code}</strong>. It expires in 5 minutes.`,
+          related_employee_id: prof.user_id,
+        });
+      } catch {
+        // audit already logged by dispatchEmail
+      }
+    } else {
+      await supabaseAdmin.from("notification_log").insert({
         channel: "email", recipient: prof.personal_email ?? "mock@local",
         recipient_user_id: prof.user_id, event_type: "password_reset_otp",
-        subject: "Bungoma CPMS — password reset code", body,
+        subject: "Password reset code — Bungoma CPMS", body,
         status: "mocked", provider: "none", sent_at: new Date().toISOString(),
-      },
-      {
-        channel: "sms", recipient: prof.phone_number ?? "mock",
-        recipient_user_id: prof.user_id, event_type: "password_reset_otp",
-        subject: "Password reset", body,
-        status: "mocked", provider: "none", sent_at: new Date().toISOString(),
-      },
-    ]);
+      });
+    }
+
+    await supabaseAdmin.from("notification_log").insert({
+      channel: "sms", recipient: prof.phone_number ?? "mock",
+      recipient_user_id: prof.user_id, event_type: "password_reset_otp",
+      subject: "Password reset", body,
+      status: "mocked", provider: "none", sent_at: new Date().toISOString(),
+    });
 
     await supabaseAdmin.rpc("log_audit", {
       _action: "password_reset_requested",

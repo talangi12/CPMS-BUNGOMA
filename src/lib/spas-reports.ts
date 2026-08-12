@@ -1,7 +1,10 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { supabase } from "@/integrations/supabase/client";
-import { getNationalId } from "@/lib/appraisal-scoring";
+import { getNationalId, parseNumericValue } from "@/lib/appraisal-scoring";
+import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 export type ReportKind = "form2_quarterly" | "form3_departmental" | "form4_cipmc" | "form5_workplan" | "annual_summary";
 
@@ -225,6 +228,60 @@ export async function generateForm4CIPMC(period: string, generatedBy: string) {
   signoffBlock(doc, y, ["CIPMC Chairperson", "Chief Officer", "County Executive Committee Member"]);
   return { number, blob: doc.output("blob"), rewards, sanctions, count: rows.length };
 }
+
+// Helper: compute achievement/variance for contract objectives
+export function computeObjectiveAchievement(obj: any) {
+  // If an explicit achievement_pct present, prefer that
+  if (obj.achievement_pct != null) return { display: `${Number(obj.achievement_pct).toFixed(1)}%`, numeric: obj.achievement_pct };
+  const t = parseNumericValue(obj.target);
+  const c = parseNumericValue(obj.current_status);
+  if (t != null && c != null) {
+    const diff = c - t;
+    return { display: `${diff.toFixed(1)}${String(obj.target).includes('%') || String(obj.current_status).includes('%') ? '%' : ''}`, numeric: diff };
+  }
+  return { display: obj.achievement ?? null, numeric: null };
+}
+
+// Server-side: fetch contract report data with strict Chief Officer authorization
+export const fetchContractReportDataServer = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i) => z.object({ contractId: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // Verify caller is a chief_officer and get their department
+    const { data: roleRows, error: roleErr } = await supabaseAdmin.from("user_roles").select("department").eq("user_id", context.userId).eq("role", "chief_officer").maybeSingle();
+    if (roleErr) throw roleErr;
+    if (!roleRows || !roleRows.department) throw new Error("Not authorised: chief officer role required");
+    const coDept = String(roleRows.department).trim().toLowerCase();
+
+    // Load contract and verify department match
+    const { data: contract, error: contractErr } = await supabaseAdmin.from("performance_contracts").select("*, profiles:owner_id(full_name, designation, department, id_number)").eq("id", data.contractId).maybeSingle();
+    if (contractErr) throw contractErr;
+    if (!contract) throw new Error("Contract not found");
+    const contractDept = String((contract as any).department ?? "").trim().toLowerCase();
+    if (contractDept !== coDept) throw new Error("Not authorised to generate reports for this department");
+
+    const [{ data: objectives, error: objErr }, { data: signoffs, error: sigErr }] = await Promise.all([
+      supabaseAdmin.from("contract_objectives").select("*").eq("contract_id", data.contractId).order("category").order("sort_order"),
+      supabaseAdmin.from("contract_signoffs").select("*").eq("contract_id", data.contractId).order("signed_at"),
+    ]);
+    if (objErr) throw objErr;
+    if (sigErr) throw sigErr;
+
+    // Determine Chief Officer profile (caller)
+    const { data: coProfile, error: coProfErr } = await supabaseAdmin.from("profiles").select("full_name, id_number, department").eq("id", context.userId).maybeSingle();
+    if (coProfErr) throw coProfErr;
+    if (!coProfile) throw new Error("Chief Officer profile not found");
+
+    return {
+      contract,
+      owner: (contract as any).profiles ?? null,
+      objectives: objectives ?? [],
+      signoffs: signoffs ?? [],
+      chiefOfficer: coProfile,
+    };
+  });
 
 export function saveBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);

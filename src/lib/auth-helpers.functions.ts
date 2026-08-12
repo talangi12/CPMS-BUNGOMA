@@ -151,6 +151,16 @@ export const resolveLoginDestination = createServerFn({ method: "POST" })
 
     const { data: roles } = await supabaseAdmin.from("user_roles").select("role").eq("user_id", userId);
     const normalizedRoles = (roles ?? []).map((row) => String((row as { role?: string | null })?.role ?? "").trim());
-    return { path: getPortalRouteForRoles(normalizedRoles) as "/dashboard" | "/admin" | "/super-admin" | "/governor" | "/cec" | "/chief-officer" | "/director" | "/appeals-committee" | "/department-admin" | "/supervisor" };
+    // If user is an appraisee and has an appraisal in 'initial_approved', redirect them to continuous-review
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data: app } = await supabaseAdmin.from("appraisals").select("id, status").eq("employee_id", userId).maybeSingle();
+      if (app?.status === "initial_approved") {
+        return { path: "/continuous-review" as const };
+      }
+    } catch (e) {
+      // ignore; fall back to role resolver
+    }
+    return { path: getPortalRouteForRoles(normalizedRoles) as "/dashboard" | "/admin" | "/super-admin" | "/governor" | "/cec" | "/chief-officer" | "/director" | "/appeals-committee" | "/department-admin" | "/supervisor" | "/external-assessor" };
   });
 

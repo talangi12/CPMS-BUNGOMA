@@ -198,28 +198,6 @@ function AppraisalPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
-  // Listen for appraisal status changes in realtime and redirect when initial_approved
-  useEffect(() => {
-    if (!data?.existing?.id) return;
-    const appId = data.existing.id as string;
-    try {
-      const ch = supabase.channel(`appraisal-${appId}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'appraisals', filter: `id=eq.${appId}` }, (payload) => {
-          try {
-            const newStatus = payload.event === 'DELETE' ? null : payload.new?.status;
-            if (newStatus === 'initial_approved') {
-              navigate({ to: '/continuous-review', replace: true });
-            }
-          } catch (e) { /* ignore */ }
-        })
-        .subscribe();
-      return () => { try { ch.unsubscribe(); } catch (e) {} };
-    } catch (e) {
-      // ignore realtime setup failures
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.existing?.id]);
-
   useEffect(() => {
     console.log("[AppraisalPage] Status state updated to:", status);
   }, [status]);

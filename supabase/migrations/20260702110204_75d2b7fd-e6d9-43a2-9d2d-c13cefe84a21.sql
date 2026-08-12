@@ -12,12 +12,6 @@ $$;
 CREATE OR REPLACE FUNCTION public.enforce_contract_before_appraisal()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN
-  IF TG_OP = 'INSERT' THEN
-    IF NOT public.has_signed_contract(NEW.employee_id) THEN
-      RAISE EXCEPTION 'You must complete and sign your Performance Contract before starting an appraisal.'
-        USING ERRCODE = 'check_violation';
-    END IF;
-  END IF;
   RETURN NEW;
 END $$;
 

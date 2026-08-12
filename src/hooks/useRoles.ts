@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 export type AppRole =
   | "employee"
   | "supervisor"
+  | "external_assessor"
   | "hr"
   | "system_admin"
   | "super_admin"
@@ -50,7 +51,8 @@ export const ROLE_RESPONSIBILITIES: Record<AppRole, string> = {
   dept_admin: "Manage the departmental Performance Matrix — add, edit, reorder, activate and deactivate performance targets. Cannot edit officers' Performance Contracts.",
   admin: "",
   county_administrator: "",
-  department_head: ""
+  department_head: "",
+  external_assessor: "Review appraisal progress county-wide and support independent oversight with read-only access.",
 };
 
 

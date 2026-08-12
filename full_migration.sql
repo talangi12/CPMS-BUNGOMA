@@ -1954,12 +1954,6 @@ $$;
 CREATE OR REPLACE FUNCTION public.enforce_contract_before_appraisal()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN
-  IF TG_OP = 'INSERT' THEN
-    IF NOT public.has_signed_contract(NEW.employee_id) THEN
-      RAISE EXCEPTION 'You must complete and sign your Performance Contract before starting an appraisal.'
-        USING ERRCODE = 'check_violation';
-    END IF;
-  END IF;
   RETURN NEW;
 END $$;
 
@@ -2070,19 +2064,7 @@ CREATE OR REPLACE FUNCTION public.enforce_contract_before_appraisal()
  SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
-DECLARE is_contract_officer boolean;
 BEGIN
-  IF TG_OP = 'INSERT' THEN
-    SELECT EXISTS(
-      SELECT 1 FROM public.user_roles
-      WHERE user_id = NEW.employee_id
-        AND role IN ('governor','cec','chief_officer','director','supervisor')
-    ) INTO is_contract_officer;
-    IF is_contract_officer AND NOT public.has_signed_contract(NEW.employee_id) THEN
-      RAISE EXCEPTION 'You must complete and sign your Performance Contract before starting an appraisal.'
-        USING ERRCODE = 'check_violation';
-    END IF;
-  END IF;
   RETURN NEW;
 END $function$;
 

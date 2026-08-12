@@ -19,9 +19,10 @@ type SendArgs = {
 
 export async function dispatchEmail(args: SendArgs) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const lovableKey = process.env.LOVABLE_API_KEY;
+  const postmarkKey = process.env.POSTMARK_API_KEY;
+  const lovelyKey = process.env.LOVABLE_API_KEY;
   const resendKey = process.env.RESEND_API_KEY;
-  const fromAddr = process.env.NOTIFY_FROM_EMAIL || "Bungoma CPMS <no-reply@epms.bungoma.local>";
+  const fromAddr = process.env.NOTIFY_FROM_EMAIL || "Bungoma county gvt <noreply@bungoma.go.ke>";
 
   const baseRow = {
     channel: "email",
@@ -34,7 +35,50 @@ export async function dispatchEmail(args: SendArgs) {
     related_employee_id: args.related_employee_id ?? null,
   };
 
-  if (!lovableKey || !resendKey) {
+  if (postmarkKey) {
+    try {
+      const resp = await fetch("https://api.postmarkapp.com/email", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "X-Postmark-Server-Token": postmarkKey,
+        },
+        body: JSON.stringify({
+          From: fromAddr,
+          To: args.to,
+          Subject: args.subject,
+          HtmlBody: args.html,
+        }),
+      });
+      const json = await resp.json();
+      const ok = resp.ok && json?.ErrorCode === 0;
+      await supabaseAdmin.from("notification_log").insert({
+        ...baseRow,
+        status: ok ? "sent" : "failed",
+        provider: "postmark",
+        provider_response: JSON.stringify(json).slice(0, 2000),
+        error: ok ? null : `HTTP ${resp.status} ${json?.Message ?? ""}`,
+        sent_at: ok ? new Date().toISOString() : null,
+      });
+      await supabaseAdmin.from("audit_logs").insert({
+        action: ok ? "notification_sent" : "notification_failed",
+        entity_type: "notification_log",
+        new_values: { event_type: args.event_type, to: args.to, subject: args.subject, status: resp.status },
+      });
+      return { sent: ok, provider: "postmark" as const, response: json };
+    } catch (e) {
+      const err = e instanceof Error ? e.message : String(e);
+      await supabaseAdmin.from("notification_log").insert({ ...baseRow, status: "failed", provider: "postmark", error: err });
+      await supabaseAdmin.from("audit_logs").insert({
+        action: "notification_failed", entity_type: "notification_log",
+        new_values: { event_type: args.event_type, to: args.to, error: err },
+      });
+      return { sent: false, error: err };
+    }
+  }
+
+  if (!lovelyKey || !resendKey) {
     await supabaseAdmin.from("notification_log").insert({
       ...baseRow,
       status: "mocked",
@@ -54,7 +98,7 @@ export async function dispatchEmail(args: SendArgs) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${lovableKey}`,
+        Authorization: `Bearer ${lovelyKey}`,
         "X-Connection-Api-Key": resendKey,
       },
       body: JSON.stringify({ from: fromAddr, to: [args.to], subject: args.subject, html: args.html }),
@@ -101,13 +145,37 @@ export const renderTemplate = (event: string, vars: Record<string, string>) => {
       return {
         subject: `Appraisal approved — ${vars.period ?? ""}`,
         html: tmpl.shell("Appraisal approved",
-          `<p>Dear ${vars.name ?? "Officer"},</p><p>Your <b>${vars.period ?? ""}</b> performance appraisal has been approved by your supervisor. You may now proceed with the cycle.</p>`),
+          `<p>Dear ${vars.name ?? "Officer"},</p><p>Your <b>${vars.period ?? ""}</b> performance appraisal has been approved by your supervisor.</p><p><strong>Score:</strong> ${vars.score ?? "Pending"}</p><p><strong>Rating:</strong> ${vars.rating ?? "Pending"}</p>`),
       };
     case "appraisal_rejected":
       return {
         subject: `Appraisal needs revision — ${vars.period ?? ""}`,
         html: tmpl.shell("Revision required",
-          `<p>Dear ${vars.name ?? "Officer"},</p><p>Your supervisor has requested changes to your appraisal.</p><p><b>Comments:</b> ${vars.reason ?? "—"}</p>`),
+          `<p>Dear ${vars.name ?? "Officer"},</p><p>Your supervisor has requested changes to your appraisal.</p><p><strong>Comments:</strong> ${vars.reason ?? "—"}</p>`),
+      };
+    case "appraisal_reopened":
+      return {
+        subject: `Appraisal reopened for edits — ${vars.period ?? ""}`,
+        html: tmpl.shell("Appraisal reopened",
+          `<p>Dear ${vars.name ?? "Officer"},</p><p>Your supervisor has reopened your appraisal for further edits.</p><p><strong>Reason:</strong> ${vars.reason ?? "—"}</p>`),
+      };
+    case "appraisal_submitted":
+      return {
+        subject: `Appraisal submitted — ${vars.period ?? ""}`,
+        html: tmpl.shell("Appraisal submitted",
+          `<p>Dear ${vars.name ?? "Officer"},</p><p>Your appraisal for <b>${vars.period ?? ""}</b> has been submitted to your supervisor and is now under review.</p>`),
+      };
+    case "password_reset_otp":
+      return {
+        subject: "Password reset code — Bungoma CPMS",
+        html: tmpl.shell("Password reset code",
+          `<p>Dear ${vars.name ?? "Officer"},</p><p>Your password reset code is <strong>${vars.code ?? "—"}</strong>. It expires in 5 minutes.</p>`),
+      };
+    case "cycle_opening":
+      return {
+        subject: `Appraisal cycle opened — ${vars.period ?? ""}`,
+        html: tmpl.shell("Appraisal cycle opened",
+          `<p>Dear ${vars.name ?? "Officer"},</p><p>A new appraisal cycle has opened for <b>${vars.period ?? ""}</b>. Please check your dashboard for details.</p>`),
       };
     default:
       return { subject: `Notification: ${event}`, html: tmpl.shell("Notification", `<p>${JSON.stringify(vars)}</p>`) };

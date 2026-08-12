@@ -16,7 +16,7 @@ export const Route = createFileRoute("/_authenticated/admin/roles")({
   component: AdminRoles,
 });
 
-const ASSIGNABLE: AppRole[] = ["employee", "supervisor", "hr", "system_admin", "super_admin", "appeals_committee", "governor", "cec", "chief_officer", "director", "dept_admin"];
+const ASSIGNABLE: AppRole[] = ["employee", "supervisor", "external_assessor", "hr", "system_admin", "super_admin", "appeals_committee", "governor", "cec", "chief_officer", "director", "dept_admin"];
 const DEPT_SCOPED: AppRole[] = ["dept_admin", "cec", "chief_officer", "director", "supervisor"];
 
 function AdminRoles() {

@@ -28,6 +28,7 @@ import { Route as AuthenticatedDepartmentAdminRouteImport } from './routes/_auth
 import { Route as AuthenticatedDeptAdminRouteImport } from './routes/_authenticated/dept-admin'
 import { Route as AuthenticatedDirectorRouteImport } from './routes/_authenticated/director'
 import { Route as AuthenticatedEndyearRouteImport } from './routes/_authenticated/endyear'
+import { Route as AuthenticatedExternalAssessorRouteImport } from './routes/_authenticated/external-assessor'
 import { Route as AuthenticatedGovernorRouteImport } from './routes/_authenticated/governor'
 import { Route as AuthenticatedMidyearRouteImport } from './routes/_authenticated/midyear'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
@@ -160,6 +161,12 @@ const AuthenticatedEndyearRoute = AuthenticatedEndyearRouteImport.update({
   path: '/endyear',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedExternalAssessorRoute =
+  AuthenticatedExternalAssessorRouteImport.update({
+    id: '/external-assessor',
+    path: '/external-assessor',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedGovernorRoute = AuthenticatedGovernorRouteImport.update({
   id: '/governor',
   path: '/governor',
@@ -350,6 +357,7 @@ export interface FileRoutesByFullPath {
   '/dept-admin': typeof AuthenticatedDeptAdminRoute
   '/director': typeof AuthenticatedDirectorRoute
   '/endyear': typeof AuthenticatedEndyearRoute
+  '/external-assessor': typeof AuthenticatedExternalAssessorRoute
   '/governor': typeof AuthenticatedGovernorRoute
   '/midyear': typeof AuthenticatedMidyearRoute
   '/profile': typeof AuthenticatedProfileRoute
@@ -401,6 +409,7 @@ export interface FileRoutesByTo {
   '/dept-admin': typeof AuthenticatedDeptAdminRoute
   '/director': typeof AuthenticatedDirectorRoute
   '/endyear': typeof AuthenticatedEndyearRoute
+  '/external-assessor': typeof AuthenticatedExternalAssessorRoute
   '/governor': typeof AuthenticatedGovernorRoute
   '/midyear': typeof AuthenticatedMidyearRoute
   '/profile': typeof AuthenticatedProfileRoute
@@ -454,6 +463,7 @@ export interface FileRoutesById {
   '/_authenticated/dept-admin': typeof AuthenticatedDeptAdminRoute
   '/_authenticated/director': typeof AuthenticatedDirectorRoute
   '/_authenticated/endyear': typeof AuthenticatedEndyearRoute
+  '/_authenticated/external-assessor': typeof AuthenticatedExternalAssessorRoute
   '/_authenticated/governor': typeof AuthenticatedGovernorRoute
   '/_authenticated/midyear': typeof AuthenticatedMidyearRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
@@ -507,6 +517,7 @@ export interface FileRouteTypes {
     | '/dept-admin'
     | '/director'
     | '/endyear'
+    | '/external-assessor'
     | '/governor'
     | '/midyear'
     | '/profile'
@@ -558,6 +569,7 @@ export interface FileRouteTypes {
     | '/dept-admin'
     | '/director'
     | '/endyear'
+    | '/external-assessor'
     | '/governor'
     | '/midyear'
     | '/profile'
@@ -610,6 +622,7 @@ export interface FileRouteTypes {
     | '/_authenticated/dept-admin'
     | '/_authenticated/director'
     | '/_authenticated/endyear'
+    | '/_authenticated/external-assessor'
     | '/_authenticated/governor'
     | '/_authenticated/midyear'
     | '/_authenticated/profile'
@@ -787,6 +800,13 @@ declare module '@tanstack/react-router' {
       path: '/endyear'
       fullPath: '/endyear'
       preLoaderRoute: typeof AuthenticatedEndyearRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/external-assessor': {
+      id: '/_authenticated/external-assessor'
+      path: '/external-assessor'
+      fullPath: '/external-assessor'
+      preLoaderRoute: typeof AuthenticatedExternalAssessorRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/governor': {
@@ -1041,6 +1061,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedDeptAdminRoute: typeof AuthenticatedDeptAdminRoute
   AuthenticatedDirectorRoute: typeof AuthenticatedDirectorRoute
   AuthenticatedEndyearRoute: typeof AuthenticatedEndyearRoute
+  AuthenticatedExternalAssessorRoute: typeof AuthenticatedExternalAssessorRoute
   AuthenticatedGovernorRoute: typeof AuthenticatedGovernorRoute
   AuthenticatedMidyearRoute: typeof AuthenticatedMidyearRoute
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
@@ -1085,6 +1106,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDeptAdminRoute: AuthenticatedDeptAdminRoute,
   AuthenticatedDirectorRoute: AuthenticatedDirectorRoute,
   AuthenticatedEndyearRoute: AuthenticatedEndyearRoute,
+  AuthenticatedExternalAssessorRoute: AuthenticatedExternalAssessorRoute,
   AuthenticatedGovernorRoute: AuthenticatedGovernorRoute,
   AuthenticatedMidyearRoute: AuthenticatedMidyearRoute,
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,

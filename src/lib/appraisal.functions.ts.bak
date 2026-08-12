@@ -336,37 +336,27 @@ export const getAppraisalForEmployee = createServerFn({ method: "GET" })
       .select("*")
       .eq("id", context.userId)
       .maybeSingle();
-    if (profileError) { console.error("[APPRAISAL SERVER] PROFILE ERROR:", profileError); throw profileError; }
+    if (profileError) throw profileError;
 
-    const { data: existingRows, error: existingError } = await supabaseAdmin
-  .from("appraisals")
-  .select("*, targets(*)")
-  .eq("employee_id", context.userId)
-  .eq("period", period)
-  .order("updated_at", { ascending: false })
-  .limit(1);
+    const { data: existing, error: existingError } = await supabaseAdmin
+      .from("appraisals")
+      .select("*, targets(*)")
+      .eq("employee_id", context.userId)
+      .eq("period", period)
+      .maybeSingle();
+    if (existingError) throw existingError;
 
-if (existingError) {
-  console.error("[APPRAISAL SERVER] EXISTING APPRAISAL ERROR:", existingError);
-  throw new Error(existingError.message || "Failed to load existing appraisal");
-}
-
-const existing = existingRows?.[0] ?? null;
-let appraisal = existing;
+    let appraisal = existing;
     if (!appraisal) {
-      const { data: fallbackRows, error: fallbackError } = await supabaseAdmin
-  .from("appraisals")
-  .select("*, targets(*)")
-  .eq("employee_id", context.userId)
-  .order("updated_at", { ascending: false })
-  .limit(1);
-
-if (fallbackError) {
-  console.error("[APPRAISAL SERVER] FALLBACK ERROR:", fallbackError);
-  throw new Error(fallbackError.message || "Failed to load fallback appraisal");
-}
-
-appraisal = fallbackRows?.[0] ?? null;
+      const { data: fallback, error: fallbackError } = await supabaseAdmin
+        .from("appraisals")
+        .select("*, targets(*)")
+        .eq("employee_id", context.userId)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (fallbackError) throw fallbackError;
+      appraisal = fallback;
     }
 
     const dept = profile?.department?.trim() ?? "";
@@ -374,15 +364,19 @@ appraisal = fallbackRows?.[0] ?? null;
       "list_supervisors_for_dept",
       { _dept: dept || null },
     );
-    if (supervisorError) { console.error("[APPRAISAL SERVER] SUPERVISOR RPC ERROR:", supervisorError); throw supervisorError; }
-    const cycleActive = true;
+    if (supervisorError) throw supervisorError;
+
+    const { data: cycleActive, error: cycleError } = dept
+      ? await supabaseAdmin.rpc("cycle_active_for_dept", { _dept: dept })
+      : { data: null };
+    if (cycleError) throw cycleError;
 
     const { data: workplans, error: workplanError } = await supabaseAdmin
       .from("workplans")
       .select("*")
       .eq("assignee_id", context.userId)
       .order("created_at", { ascending: false });
-    if (workplanError) { console.error("[APPRAISAL SERVER] WORKPLAN ERROR:", workplanError); throw workplanError; }
+    if (workplanError) throw workplanError;
 
     return {
       profile,
@@ -403,7 +397,7 @@ export const getDashboardMetrics = createServerFn({ method: "GET" })
       supabaseAdmin.from("profiles").select("*").eq("id", context.userId).maybeSingle(),
       supabaseAdmin.from("appraisals").select("id, period, status, total_score, rating, supervisor_reviewed_at, employee_signed_at, created_at, updated_at").eq("employee_id", context.userId).order("created_at", { ascending: false }),
     ]);
-    if (profileError) { console.error("[APPRAISAL SERVER] PROFILE ERROR:", profileError); throw profileError; }
+    if (profileError) throw profileError;
     if (appraisalsError) throw appraisalsError;
 
     const currentAppraisal = appraisals?.[0] ?? null;
@@ -581,17 +575,6 @@ export const createContinuousReview = createServerFn({ method: "POST" })
 
     const { error } = await supabaseAdmin.from("continuous_reviews").insert(insertPayload as any);
     if (error) throw error;
-    // Notify chosen supervisor (best-effort)
-    try {
-      if (app.chosen_supervisor_id) {
-        const { sendEventEmail } = await import("./notify.functions");
-        await sendEventEmail({ data: { event_type: "continuous_review_submitted", to_user_id: app.chosen_supervisor_id, vars: { appraisalId: data.appraisalId, achievement: data.achievement ?? "" }, related_appraisal_id: data.appraisalId } });
-      }
-    } catch (e) {
-      // don't block on notification failures
-      console.warn("Failed to notify supervisor about continuous review", e);
-    }
-
     return { success: true };
   });
 
@@ -665,7 +648,7 @@ export const getSupervisorReview = createServerFn({ method: "GET" })
       .eq("id", appraisal.employee_id)
       .maybeSingle();
 
-    if (profileError) { console.error("[APPRAISAL SERVER] PROFILE ERROR:", profileError); throw profileError; }
+    if (profileError) throw profileError;
 
     return { appraisal: appraisalWithTargets, profile };
   });
@@ -863,5 +846,3 @@ export const reopenSupervisorAppraisal = createServerFn({ method: "POST" })
       throw e;
     }
   });
-
-

@@ -65,7 +65,7 @@ function SignOffPage() {
       supabase.from("performance_contracts").select("*").eq("id", r.contract_id).maybeSingle(),
       supabase.from("contract_objectives").select("*").eq("contract_id", r.contract_id).order("sort_order"),
     ]);
-    setContract(c as unknown as Record<string, unknown>);
+    setContract(c ? (c as unknown as Record<string, unknown>) : null);
     setObjectives((objs ?? []) as unknown as Record<string, unknown>[]);
   };
 
@@ -96,13 +96,27 @@ function SignOffPage() {
     } catch (e) { toast.error((e as Error).message); }
   };
 
-  const level = payload?.level ?? "none";
+  const level =
+    payload?.level && payload.level !== "none"
+      ? payload.level
+      : roles?.includes("governor")
+        ? "governor"
+        : roles?.includes("cec")
+          ? "cec"
+          : roles?.includes("chief_officer")
+            ? "chief_officer"
+            : roles?.includes("director")
+              ? "director"
+              : roles?.includes("supervisor")
+                ? "supervisor"
+                : "none";
   const meta = LEVEL_META[level] ?? LEVEL_META.none;
   const Icon = meta.icon;
 
   const isSupervisorLevel = level === "supervisor";
-  const canApprove = contract && ["submitted", "under_review", "resubmitted", "negotiation"].includes(String((contract as { status?: string }).status ?? ""));
-  const canSign = contract && String((contract as { status?: string }).status) === "approved";
+  const status = contract ? String((contract as { status?: string }).status ?? "") : "";
+  const canApprove = contract && ["submitted", "under_review", "resubmitted", "negotiation"].includes(status);
+  const canSign = contract && !["signed", "locked"].includes(status);
 
   return (
     <div className="min-h-screen bg-background">
@@ -248,7 +262,7 @@ function SignOffPage() {
                         <FileSignature className="h-3.5 w-3.5 mr-1.5" /> Digitally sign &amp; lock
                       </Button>
                       <p className="text-[11px] text-muted-foreground">
-                        Signing is only enabled after the contract is <span className="font-medium">approved</span>. Signing locks the contract and unlocks the next level below in the hierarchy.
+                        Signing is enabled once a contract exists. Hierarchy is still maintained: the current approving officer signs in order, and this action locks the contract at this level.
                       </p>
                     </CardContent>
                   </Card>
@@ -261,3 +275,5 @@ function SignOffPage() {
     </div>
   );
 }
+
+

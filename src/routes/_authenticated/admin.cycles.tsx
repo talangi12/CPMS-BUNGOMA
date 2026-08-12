@@ -11,6 +11,8 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useRoles, hasAnyRole } from "@/hooks/useRoles";
 import { CalendarDays, Crown, ShieldCheck, CheckCircle2, Circle } from "lucide-react";
+import { useServerFn } from "@tanstack/react-start";
+import { sendEventEmail } from "@/lib/notify.functions";
 
 export const Route = createFileRoute("/_authenticated/admin/cycles")({
   head: () => ({ meta: [{ title: "Appraisal Cycles — Bungoma CPMS" }] }),
@@ -23,6 +25,7 @@ function AdminCycles() {
   const { data: roles } = useRoles(user.id);
   const isAdmin = hasAnyRole(roles, ["system_admin", "super_admin"]);
   const isGovernor = hasAnyRole(roles, ["governor"]);
+  const notifyCycleOpenedFn = useServerFn(sendEventEmail);
 
   const { data: cycles } = useQuery({
     queryKey: ["cycles"],
@@ -68,6 +71,16 @@ function AdminCycles() {
     toast.success("Governor approval recorded — propagating county-wide");
     await supabase.rpc("log_audit", { _action: "governor_signed_cycle", _entity_type: "appraisal_cycles", _entity_id: cycleId, _new: { fy_label: fyLabel } });
     qc.invalidateQueries({ queryKey: ["cycles"] });
+    try {
+      await notifyCycleOpenedFn({ data: {
+        event_type: "cycle_opening",
+        to_user_id: user.id,
+        vars: { period: fyLabel },
+        related_appraisal_id: null,
+      }});
+    } catch {
+      // Notification failures are logged server-side.
+    }
   }
 
   return (
